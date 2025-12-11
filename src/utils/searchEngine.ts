@@ -68,12 +68,9 @@ function convertGeoNamesEntry(entry: { id: string; n: string; a?: string; c?: st
 
 // Helper: Index a list of locations
 function indexLocations(locations: GeoLocation[]) {
-    // Current offset in geoData (start of new data)
-    const baseGeoIdx = geoData.length;
-
     // Add to geoData array and index
 
-    locations.forEach((loc, i) => {
+    locations.forEach(loc => {
         // Deduplication: Skip if ID already loaded
         if (loadedIds.has(loc.id)) return;
         loadedIds.add(loc.id);
