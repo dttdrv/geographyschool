@@ -5,9 +5,9 @@
  * Run with: node scripts/processAllCountries.cjs
  */
 
-const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { downloadFile } = require('./utils/secureDownload.cjs');
 const readline = require('readline');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'public', 'data', 'villages');
@@ -34,26 +34,6 @@ const COLS = {
     population: 14,
 };
 
-async function downloadFile(url, destPath) {
-    return new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(destPath);
-        https.get(url, (response) => {
-            if (response.statusCode === 302 || response.statusCode === 301) {
-                https.get(response.headers.location, (res) => {
-                    res.pipe(file);
-                    file.on('finish', () => { file.close(); resolve(); });
-                }).on('error', reject);
-            } else if (response.statusCode === 404) {
-                file.close();
-                fs.unlinkSync(destPath);
-                reject(new Error('File not found'));
-            } else {
-                response.pipe(file);
-                file.on('finish', () => { file.close(); resolve(); });
-            }
-        }).on('error', reject);
-    });
-}
 
 async function extractZip(zipPath, destDir) {
     const AdmZip = require('adm-zip');

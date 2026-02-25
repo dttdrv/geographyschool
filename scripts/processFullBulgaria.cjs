@@ -5,9 +5,9 @@
  * Run with: node scripts/processFullBulgaria.cjs
  */
 
-const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { downloadFile } = require('./utils/secureDownload.cjs');
 const readline = require('readline');
 
 const BG_URL = 'https://download.geonames.org/export/dump/BG.zip';
@@ -28,23 +28,6 @@ const COLS = {
     population: 14,
 };
 
-async function downloadFile(url, destPath) {
-    console.log(`Downloading ${url}...`);
-    return new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(destPath);
-        https.get(url, (response) => {
-            if (response.statusCode === 302 || response.statusCode === 301) {
-                https.get(response.headers.location, (res) => {
-                    res.pipe(file);
-                    file.on('finish', () => { file.close(); resolve(); });
-                }).on('error', reject);
-            } else {
-                response.pipe(file);
-                file.on('finish', () => { file.close(); resolve(); });
-            }
-        }).on('error', reject);
-    });
-}
 
 async function extractZip(zipPath, destDir) {
     console.log(`Extracting ${zipPath}...`);

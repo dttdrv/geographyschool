@@ -5,9 +5,9 @@
  * Run with: node scripts/processGeoNames.js
  */
 
-const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { downloadFile } = require('./utils/secureDownload.cjs');
 const { createUnzip } = require('zlib');
 const { pipeline } = require('stream/promises');
 const readline = require('readline');
@@ -35,30 +35,6 @@ const COLS = {
     timezone: 17
 };
 
-async function downloadFile(url, destPath) {
-    console.log(`Downloading ${url}...`);
-    return new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(destPath);
-        https.get(url, (response) => {
-            if (response.statusCode === 302 || response.statusCode === 301) {
-                // Follow redirect
-                https.get(response.headers.location, (res) => {
-                    res.pipe(file);
-                    file.on('finish', () => {
-                        file.close();
-                        resolve();
-                    });
-                }).on('error', reject);
-            } else {
-                response.pipe(file);
-                file.on('finish', () => {
-                    file.close();
-                    resolve();
-                });
-            }
-        }).on('error', reject);
-    });
-}
 
 async function extractZip(zipPath, destDir) {
     console.log(`Extracting ${zipPath}...`);
