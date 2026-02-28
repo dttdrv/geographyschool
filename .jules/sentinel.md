@@ -1,0 +1,4 @@
+## 2024-05-18 - [Fix reverse tabnabbing in MapContainer popup]
+**Vulnerability:** Found an anchor tag `<a target="_blank">` without `rel="noopener noreferrer"` in the raw HTML string used for map popups in `src/components/Map/MapContainer.tsx`.
+**Learning:** Raw HTML strings injected into the DOM (e.g., via `innerHTML` or `setDOMContent`) bypass React's standard protections and linting for target="_blank" vulnerabilities.
+**Prevention:** Ensure any dynamically generated HTML strings containing external links with `target="_blank"` manually include `rel="noopener noreferrer"` to prevent reverse tabnabbing. Consider adding a custom linting rule or check for raw HTML strings containing `target="_blank"`.
