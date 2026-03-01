@@ -482,32 +482,54 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
                     const popupContent = document.createElement('div');
                     popupContent.className = 'glass-popup-content';
+
+                    // Use static HTML to prevent XSS, then populate dynamic content via DOM properties
                     popupContent.innerHTML = `
                         <div class="popup-header">
                             <div class="popup-tag-dot"></div>
-                            <span class="popup-title">${t.selectedLocation}</span>
+                            <span class="popup-title" id="popup-title"></span>
                         </div>
                         
                         <div class="popup-preview">
-                            <img src="${tileUrl}" alt="Satellite Preview" />
+                            <img id="popup-preview-img" alt="Satellite Preview" />
                         </div>
 
                         <div class="popup-coords">
-                            <div>${t.lat}: ${e.lngLat.lat.toFixed(5)}</div>
-                            <div>${t.lng}: ${e.lngLat.lng.toFixed(5)}</div>
+                            <div id="popup-coord-lat"></div>
+                            <div id="popup-coord-lng"></div>
                         </div>
 
                         <div class="popup-actions">
-                            <a href="https://www.google.com/maps?q=${e.lngLat.lat},${e.lngLat.lng}" target="_blank" class="popup-btn-primary">
-                                <span>${t.openInGoogleMaps}</span>
+                            <a id="popup-google-maps-link" target="_blank" rel="noopener noreferrer" class="popup-btn-primary">
+                                <span id="popup-google-maps-text"></span>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                             </a>
                             
-                            <button id="remove-marker-btn" class="popup-btn-danger">
-                                ${t.removeMarker}
-                            </button>
+                            <button id="remove-marker-btn" class="popup-btn-danger"></button>
                         </div>
                     `;
+
+                    // Safely inject dynamic content
+                    const titleEl = popupContent.querySelector('#popup-title');
+                    if (titleEl) titleEl.textContent = t.selectedLocation;
+
+                    const imgEl = popupContent.querySelector('#popup-preview-img') as HTMLImageElement;
+                    if (imgEl) imgEl.src = tileUrl;
+
+                    const latEl = popupContent.querySelector('#popup-coord-lat');
+                    if (latEl) latEl.textContent = `${t.lat}: ${e.lngLat.lat.toFixed(5)}`;
+
+                    const lngEl = popupContent.querySelector('#popup-coord-lng');
+                    if (lngEl) lngEl.textContent = `${t.lng}: ${e.lngLat.lng.toFixed(5)}`;
+
+                    const mapsLinkEl = popupContent.querySelector('#popup-google-maps-link') as HTMLAnchorElement;
+                    if (mapsLinkEl) mapsLinkEl.href = `https://www.google.com/maps?q=${e.lngLat.lat},${e.lngLat.lng}`;
+
+                    const mapsTextEl = popupContent.querySelector('#popup-google-maps-text');
+                    if (mapsTextEl) mapsTextEl.textContent = t.openInGoogleMaps;
+
+                    const removeBtnEl = popupContent.querySelector('#remove-marker-btn');
+                    if (removeBtnEl) removeBtnEl.textContent = t.removeMarker;
 
                     // Create popup without binding to marker - gives us full control
                     const popup = new maplibregl.Popup({ offset: 25, closeButton: false, closeOnClick: false })
