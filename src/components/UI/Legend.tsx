@@ -1,12 +1,13 @@
 import React from 'react';
 import './Legend.css';
+import type { Translation } from '../../utils/translations';
 
 interface LegendProps {
     showWeather: boolean;
 
     activeLayer: string;
     weatherTs?: string;
-    translations: any;
+    translations: Translation;
 }
 
 const Legend: React.FC<LegendProps> = ({ showWeather, activeLayer, weatherTs, translations }) => {

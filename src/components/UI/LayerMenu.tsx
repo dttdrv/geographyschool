@@ -6,6 +6,7 @@ import { springs, variants } from '../../utils/animations';
 import type { MapStyleId } from '../Map/mapStyles';
 import { MAP_STYLES } from '../Map/mapStyles';
 import { COUNTRIES } from '../../utils/countries';
+import type { Translation } from '../../utils/translations';
 
 interface LayerMenuProps {
     activeLayer: MapStyleId;
@@ -17,7 +18,7 @@ interface LayerMenuProps {
     showBorders: boolean;
     onToggleBorders: () => void;
 
-    translations: any;
+    translations: Translation;
     isDark: boolean;
     selectedAdminCountry: string | null;
     onSelectAdminCountry: (country: string | null) => void;
@@ -69,7 +70,7 @@ const LayerMenu: React.FC<LayerMenuProps> = ({
                                     transition={springs.snappy}
                                 />
                             )}
-                            <span className="segment-label">{translations.layers[id]}</span>
+                            <span className="segment-label">{translations.layers[id as keyof typeof translations.layers]}</span>
                         </motion.div>
                     ))}
                 </div>

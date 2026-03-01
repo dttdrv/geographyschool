@@ -3,12 +3,13 @@ import { Plus, Minus, Navigation } from 'lucide-react';
 import { motion } from 'framer-motion';
 import './ZoomControl.css';
 import { springs, variants } from '../../utils/animations';
+import type { Translation } from '../../utils/translations';
 
 interface ZoomControlProps {
     onZoomIn: () => void;
     onZoomOut: () => void;
     onLocateMe?: () => void;
-    translations?: any;
+    translations?: Translation;
 }
 
 /**
