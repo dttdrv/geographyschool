@@ -70,7 +70,7 @@ const LayerMenu: React.FC<LayerMenuProps> = ({
                                     transition={springs.snappy}
                                 />
                             )}
-                            <span className="segment-label">{translations.layers[id as keyof typeof translations.layers]}</span>
+                            <span className="segment-label">{translations.layers[id as MapStyleId]}</span>
                         </motion.div>
                     ))}
                 </div>

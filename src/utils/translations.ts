@@ -1,3 +1,5 @@
+import type { MapStyleId } from '../components/Map/mapStyles';
+
 export type SupportedLanguage = 'en' | 'bg' | 'it';
 
 export interface Translation {
@@ -8,12 +10,7 @@ export interface Translation {
         layers: string;
         continents: string;
     };
-    layers: {
-        political: string;
-        relief: string;
-        satellite: string;
-        topo: string;
-    };
+    layers: Record<MapStyleId, string>;
     overlays: {
         graticules: string;
         labels: string;
@@ -83,9 +80,7 @@ export const translations: Record<SupportedLanguage, Translation> = {
         },
         layers: {
             political: 'Political',
-            relief: 'Relief',
-            satellite: 'Satellite',
-            topo: 'Topographic'
+            satellite: 'Satellite'
         },
         overlays: {
             graticules: 'Grid',
@@ -153,9 +148,7 @@ export const translations: Record<SupportedLanguage, Translation> = {
         },
         layers: {
             political: 'Политическа',
-            relief: 'Релефна',
-            satellite: 'Сателитна',
-            topo: 'Топографска'
+            satellite: 'Сателитна'
         },
         overlays: {
             graticules: 'Мрежа',
@@ -223,9 +216,7 @@ export const translations: Record<SupportedLanguage, Translation> = {
         },
         layers: {
             political: 'Politica',
-            relief: 'Rilievo',
-            satellite: 'Satellite',
-            topo: 'Topografica'
+            satellite: 'Satellite'
         },
         overlays: {
             graticules: 'Reticolo',
