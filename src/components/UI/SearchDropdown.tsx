@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Flag, Building2, Mountain, Loader2, Home, TreePine } from 'lucide-react';
 import type { SearchResult } from '../../utils/searchEngine';
+import type { Translation } from '../../utils/translations';
 
 interface SearchDropdownProps {
     results: SearchResult[];
@@ -11,18 +12,7 @@ interface SearchDropdownProps {
     onSelect: (result: SearchResult) => void;
     onHover: (index: number) => void;
     highlightText: string;
-    translations: {
-        search: {
-            noResults: string;
-            loading: string;
-            country: string;
-            capital: string;
-            city: string;
-            town: string;
-            village: string;
-            landmark: string;
-        };
-    };
+    translations: Translation;
 }
 
 // Icon mapping for result types

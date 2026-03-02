@@ -7,11 +7,12 @@ const LayerMenu = lazy(() => import('./LayerMenu'));
 import ZoomControl from './ZoomControl';
 const SearchDropdown = lazy(() => import('./SearchDropdown'));
 import { useWindowSize } from '../../hooks/useWindowSize';
-export type Language = 'en' | 'bg' | 'it';
 import type { MapStyleId } from '../Map/mapStyles';
 import { useOnClickOutside } from '../../hooks/useOnClickOutside';
 import { springs, transitions, variants } from '../../utils/animations';
 import { initializeSearchEngine, fuzzySearch, type SearchResult } from '../../utils/searchEngine';
+import type { Translation, SupportedLanguage } from '../../utils/translations';
+export type Language = SupportedLanguage;
 
 interface OverlayProps {
     onToolChange: (tool: string | null) => void;
@@ -20,7 +21,7 @@ interface OverlayProps {
     onClearMeasurement: () => void;
     currentLang: Language;
     onLangChange: (lang: Language) => void;
-    translations: any;
+    translations: Translation;
     currentLayer: MapStyleId;
     showGraticules: boolean;
     onToggleGraticules: () => void;

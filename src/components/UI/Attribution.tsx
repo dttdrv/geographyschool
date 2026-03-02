@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Info } from 'lucide-react';
 import './Attribution.css';
+import type { Translation } from '../../utils/translations';
 
 interface AttributionProps {
     onToggle: (isOpen: boolean) => void;
-    translations: any;
+    translations: Translation;
 }
 
 const Attribution: React.FC<AttributionProps> = ({ onToggle, translations }) => {

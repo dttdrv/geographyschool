@@ -1,4 +1,75 @@
-export const translations = {
+import type { MapStyleId } from '../components/Map/mapStyles';
+
+export type SupportedLanguage = 'en' | 'bg' | 'it';
+
+export interface Translation {
+    tools: {
+        draw: string;
+        marker: string;
+        measure: string;
+        layers: string;
+        continents: string;
+    };
+    layers: Record<MapStyleId, string>;
+    overlays: {
+        graticules: string;
+        labels: string;
+        borders: string;
+        administrativeRegions: string;
+        selectCountry: string;
+        none: string;
+        rain: string;
+    };
+    ui: {
+        measurement: string;
+        mapLayers: string;
+        overlays: string;
+        continents: string;
+        language: string;
+        about: string;
+        developedBy: string;
+        searchPlaceholder: string;
+    };
+    search: {
+        noResults: string;
+        loading: string;
+        country: string;
+        capital: string;
+        city: string;
+        town: string;
+        village: string;
+        landmark: string;
+    };
+    legend: {
+        precipitation: string;
+        temp: string;
+        elevation: string;
+        light: string;
+        moderate: string;
+        heavy: string;
+    };
+    marker: {
+        selectedLocation: string;
+        openInGoogleMaps: string;
+        removeMarker: string;
+        lat: string;
+        lng: string;
+    };
+    view: {
+        hideUI: string;
+        showUI: string;
+        fullscreen: string;
+        exitFullscreen: string;
+    };
+    controls: {
+        zoomIn: string;
+        zoomOut: string;
+        locateMe: string;
+    };
+}
+
+export const translations: Record<SupportedLanguage, Translation> = {
+
     en: {
         tools: {
             draw: 'Draw',
@@ -9,9 +80,7 @@ export const translations = {
         },
         layers: {
             political: 'Political',
-            relief: 'Relief',
-            satellite: 'Satellite',
-            topo: 'Topographic'
+            satellite: 'Satellite'
         },
         overlays: {
             graticules: 'Grid',
@@ -79,9 +148,7 @@ export const translations = {
         },
         layers: {
             political: 'Политическа',
-            relief: 'Релефна',
-            satellite: 'Сателитна',
-            topo: 'Топографска'
+            satellite: 'Сателитна'
         },
         overlays: {
             graticules: 'Мрежа',
@@ -149,9 +216,7 @@ export const translations = {
         },
         layers: {
             political: 'Politica',
-            relief: 'Rilievo',
-            satellite: 'Satellite',
-            topo: 'Topografica'
+            satellite: 'Satellite'
         },
         overlays: {
             graticules: 'Reticolo',
