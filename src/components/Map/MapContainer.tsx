@@ -214,6 +214,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
+    // Throttle refs for high-frequency events to prevent excessive React re-renders
+    const lastMouseMoveRef = useRef<number>(0);
+    const lastMoveRef = useRef<number>(0);
+
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -628,6 +632,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             map.current.on('move', () => {
+                const now = performance.now();
+                // Throttle map move state updates to ~20fps (50ms) to prevent main thread blocking
+                if (now - lastMoveRef.current < 50) return;
+                lastMoveRef.current = now;
+
                 if (map.current && onCoordinatesChange) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
@@ -636,7 +645,15 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                // Throttle mousemove state updates to ~20fps (50ms)
+                const now = performance.now();
+                const shouldUpdateState = now - lastMouseMoveRef.current >= 50;
+
+                if (shouldUpdateState) {
+                    lastMouseMoveRef.current = now;
+                }
+
+                if (onCoordinatesChange && map.current && shouldUpdateState) {
                     const zoom = map.current.getZoom();
                     onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
                 }
@@ -644,12 +661,15 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 // Ruler Logic
                 if (rulerState.current.active && rulerState.current.points.length > 0) {
                     rulerState.current.tempPoint = [e.lngLat.lng, e.lngLat.lat];
+                    // Always visually update the ruler layer instantly (MapLibre layer is fast)
                     updateRulerLayer();
 
-                    // Live distance update
-                    const line = lineString([rulerState.current.points[0], rulerState.current.tempPoint]);
-                    const distance = length(line, { units: 'kilometers' });
-                    onMeasure(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
+                    // Only update React measurement state (expensive) throttled
+                    if (shouldUpdateState) {
+                        const line = lineString([rulerState.current.points[0], rulerState.current.tempPoint]);
+                        const distance = length(line, { units: 'kilometers' });
+                        onMeasure(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
+                    }
                 }
             });
 
