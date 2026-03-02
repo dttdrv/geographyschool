@@ -9,6 +9,162 @@ import type { Language } from '../UI/Overlay';
 import { translations } from '../../utils/translations';
 import { checkAndLoadCountries } from '../../utils/searchEngine';
 
+// Vector Label Layer Configuration - Single source of truth for all label types
+const VECTOR_LABEL_LAYERS = [
+    // Water name labels (ocean and sea) - uses 'water_name' source-layer
+    {
+        id: 'vector-labels-ocean',
+        class: 'ocean',
+        sourceLayer: 'water_name',
+        minzoom: undefined,
+        maxzoom: 6,
+        fontSize: ['interpolate', ['linear'], ['zoom'], 1, 14, 4, 20] as any,
+        font: 'Noto Sans Italic',
+        textTransform: 'uppercase' as const,
+        letterSpacing: 0.3,
+        haloWidth: 2,
+        opacity: 0.8,
+        textColor: '#4a90d9' // Blue text for water bodies
+    },
+    {
+        id: 'vector-labels-sea',
+        class: 'sea',
+        sourceLayer: 'water_name',
+        minzoom: 3,
+        maxzoom: undefined,
+        fontSize: ['interpolate', ['linear'], ['zoom'], 3, 11, 6, 16] as any,
+        font: 'Noto Sans Italic',
+        textTransform: undefined,
+        letterSpacing: 0.15,
+        haloWidth: 1.5,
+        opacity: 0.8,
+        textColor: '#4a90d9' // Blue text for water bodies
+    },
+    {
+        id: 'vector-labels-continent',
+        class: 'continent',
+        minzoom: undefined,
+        maxzoom: 4,
+        fontSize: 18,
+        font: 'Noto Sans Bold',
+        textTransform: 'uppercase' as const,
+        letterSpacing: 0.2,
+        haloWidth: 2,
+        opacity: ['interpolate', ['linear'], ['zoom'], 1, 1, 4, 0] as any
+    },
+    {
+        id: 'vector-labels-country',
+        class: 'country',
+        minzoom: 2,
+        maxzoom: undefined,
+        fontSize: ['interpolate', ['linear'], ['zoom'], 2, 10, 6, 14] as any,
+        font: 'Noto Sans Regular',
+        textTransform: 'uppercase' as const,
+        letterSpacing: 0.1,
+        haloWidth: 2,
+        opacity: undefined
+    },
+    {
+        id: 'vector-labels-state',
+        class: 'state',
+        minzoom: 4,
+        maxzoom: undefined,
+        fontSize: 12,
+        font: 'Noto Sans Regular',
+        textTransform: undefined,
+        letterSpacing: undefined,
+        haloWidth: 1.5,
+        opacity: 0.8
+    },
+    {
+        id: 'vector-labels-city',
+        class: 'city',
+        minzoom: 9,
+        maxzoom: undefined,
+        fontSize: ['interpolate', ['linear'], ['zoom'], 7, 10, 12, 16] as any,
+        font: 'Noto Sans Regular',
+        textTransform: undefined,
+        letterSpacing: undefined,
+        haloWidth: 1.5,
+        opacity: undefined
+    },
+    {
+        id: 'vector-labels-town',
+        class: 'town',
+        minzoom: 11,
+        maxzoom: undefined,
+        fontSize: 11,
+        font: 'Noto Sans Regular',
+        textTransform: undefined,
+        letterSpacing: undefined,
+        haloWidth: 1,
+        opacity: undefined
+    },
+    {
+        id: 'vector-labels-village',
+        class: 'village',
+        minzoom: 13,
+        maxzoom: undefined,
+        fontSize: 10,
+        font: 'Noto Sans Regular',
+        textTransform: undefined,
+        letterSpacing: undefined,
+        haloWidth: 1,
+        opacity: 0.9
+    }
+];
+
+// Pre-calculate IDs to avoid allocation in updateLanguage
+const VECTOR_LABEL_LAYER_IDS = VECTOR_LABEL_LAYERS.map(layer => layer.id);
+
+// Helper to add all vector label layers
+const addVectorLabelLayers = (
+    mapInstance: maplibregl.Map,
+    sourceId: string,
+    langField: string,
+    textColor: string,
+    haloColor: string
+) => {
+    VECTOR_LABEL_LAYERS.forEach(layer => {
+        if (mapInstance.getLayer(layer.id)) return; // Skip if already exists
+
+        const layoutProps: any = {
+            'text-field': ['coalesce', ['get', langField], ['get', 'name:en'], ['get', 'name']],
+            'text-size': layer.fontSize,
+            'text-font': [layer.font]
+        };
+        if (layer.textTransform) layoutProps['text-transform'] = layer.textTransform;
+        if (layer.letterSpacing !== undefined) layoutProps['text-letter-spacing'] = layer.letterSpacing;
+
+        // Use layer-specific text color if defined (e.g., blue for oceans), otherwise use default
+        const layerTextColor = (layer as any).textColor || textColor;
+
+        const paintProps: any = {
+            'text-color': layerTextColor,
+            'text-halo-color': haloColor,
+            'text-halo-width': layer.haloWidth
+        };
+        if (layer.opacity !== undefined) paintProps['text-opacity'] = layer.opacity;
+
+        // Use layer-specific source-layer if defined (water_name for oceans), otherwise default to 'place'
+        const sourceLayer = (layer as any).sourceLayer || 'place';
+
+        const layerDef: any = {
+            id: layer.id,
+            type: 'symbol',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['==', 'class', layer.class],
+            layout: layoutProps,
+            paint: paintProps
+        };
+        if (layer.minzoom !== undefined) layerDef.minzoom = layer.minzoom;
+        if (layer.maxzoom !== undefined) layerDef.maxzoom = layer.maxzoom;
+
+        mapInstance.addLayer(layerDef);
+    });
+};
+
 export interface MapContainerProps {
     onMeasure: (measurement: string) => void;
     activeLayer: MapStyleId;
@@ -58,158 +214,6 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
-    // Vector Label Layer Configuration - Single source of truth for all label types
-    const VECTOR_LABEL_LAYERS = [
-        // Water name labels (ocean and sea) - uses 'water_name' source-layer
-        {
-            id: 'vector-labels-ocean',
-            class: 'ocean',
-            sourceLayer: 'water_name',
-            minzoom: undefined,
-            maxzoom: 6,
-            fontSize: ['interpolate', ['linear'], ['zoom'], 1, 14, 4, 20] as any,
-            font: 'Noto Sans Italic',
-            textTransform: 'uppercase' as const,
-            letterSpacing: 0.3,
-            haloWidth: 2,
-            opacity: 0.8,
-            textColor: '#4a90d9' // Blue text for water bodies
-        },
-        {
-            id: 'vector-labels-sea',
-            class: 'sea',
-            sourceLayer: 'water_name',
-            minzoom: 3,
-            maxzoom: undefined,
-            fontSize: ['interpolate', ['linear'], ['zoom'], 3, 11, 6, 16] as any,
-            font: 'Noto Sans Italic',
-            textTransform: undefined,
-            letterSpacing: 0.15,
-            haloWidth: 1.5,
-            opacity: 0.8,
-            textColor: '#4a90d9' // Blue text for water bodies
-        },
-        {
-            id: 'vector-labels-continent',
-            class: 'continent',
-            minzoom: undefined,
-            maxzoom: 4,
-            fontSize: 18,
-            font: 'Noto Sans Bold',
-            textTransform: 'uppercase' as const,
-            letterSpacing: 0.2,
-            haloWidth: 2,
-            opacity: ['interpolate', ['linear'], ['zoom'], 1, 1, 4, 0] as any
-        },
-        {
-            id: 'vector-labels-country',
-            class: 'country',
-            minzoom: 2,
-            maxzoom: undefined,
-            fontSize: ['interpolate', ['linear'], ['zoom'], 2, 10, 6, 14] as any,
-            font: 'Noto Sans Regular',
-            textTransform: 'uppercase' as const,
-            letterSpacing: 0.1,
-            haloWidth: 2,
-            opacity: undefined
-        },
-        {
-            id: 'vector-labels-state',
-            class: 'state',
-            minzoom: 4,
-            maxzoom: undefined,
-            fontSize: 12,
-            font: 'Noto Sans Regular',
-            textTransform: undefined,
-            letterSpacing: undefined,
-            haloWidth: 1.5,
-            opacity: 0.8
-        },
-        {
-            id: 'vector-labels-city',
-            class: 'city',
-            minzoom: 9,
-            maxzoom: undefined,
-            fontSize: ['interpolate', ['linear'], ['zoom'], 7, 10, 12, 16] as any,
-            font: 'Noto Sans Regular',
-            textTransform: undefined,
-            letterSpacing: undefined,
-            haloWidth: 1.5,
-            opacity: undefined
-        },
-        {
-            id: 'vector-labels-town',
-            class: 'town',
-            minzoom: 11,
-            maxzoom: undefined,
-            fontSize: 11,
-            font: 'Noto Sans Regular',
-            textTransform: undefined,
-            letterSpacing: undefined,
-            haloWidth: 1,
-            opacity: undefined
-        },
-        {
-            id: 'vector-labels-village',
-            class: 'village',
-            minzoom: 13,
-            maxzoom: undefined,
-            fontSize: 10,
-            font: 'Noto Sans Regular',
-            textTransform: undefined,
-            letterSpacing: undefined,
-            haloWidth: 1,
-            opacity: 0.9
-        }
-    ];
-
-    // Helper to add all vector label layers
-    const addVectorLabelLayers = (
-        mapInstance: maplibregl.Map,
-        sourceId: string,
-        langField: string,
-        textColor: string,
-        haloColor: string
-    ) => {
-        VECTOR_LABEL_LAYERS.forEach(layer => {
-            if (mapInstance.getLayer(layer.id)) return; // Skip if already exists
-
-            const layoutProps: any = {
-                'text-field': ['coalesce', ['get', langField], ['get', 'name:en'], ['get', 'name']],
-                'text-size': layer.fontSize,
-                'text-font': [layer.font]
-            };
-            if (layer.textTransform) layoutProps['text-transform'] = layer.textTransform;
-            if (layer.letterSpacing) layoutProps['text-letter-spacing'] = layer.letterSpacing;
-
-            // Use layer-specific text color if defined (e.g., blue for oceans), otherwise use default
-            const layerTextColor = (layer as any).textColor || textColor;
-
-            const paintProps: any = {
-                'text-color': layerTextColor,
-                'text-halo-color': haloColor,
-                'text-halo-width': layer.haloWidth
-            };
-            if (layer.opacity !== undefined) paintProps['text-opacity'] = layer.opacity;
-
-            // Use layer-specific source-layer if defined (water_name for oceans), otherwise default to 'place'
-            const sourceLayer = (layer as any).sourceLayer || 'place';
-
-            const layerDef: any = {
-                id: layer.id,
-                type: 'symbol',
-                source: sourceId,
-                'source-layer': sourceLayer,
-                filter: ['==', 'class', layer.class],
-                layout: layoutProps,
-                paint: paintProps
-            };
-            if (layer.minzoom !== undefined) layerDef.minzoom = layer.minzoom;
-            if (layer.maxzoom !== undefined) layerDef.maxzoom = layer.maxzoom;
-
-            mapInstance.addLayer(layerDef);
-        });
-    };
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -680,18 +684,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 currentLang === 'it' ? 'name:it' : 'name';
 
         // Update all vector label layers
-        const vectorLabelLayerIds = [
-            'vector-labels-ocean',
-            'vector-labels-sea',
-            'vector-labels-continent',
-            'vector-labels-country',
-            'vector-labels-state',
-            'vector-labels-city',
-            'vector-labels-town',
-            'vector-labels-village'
-        ];
-
-        vectorLabelLayerIds.forEach(layerId => {
+        VECTOR_LABEL_LAYER_IDS.forEach(layerId => {
             if (map.current?.getLayer(layerId)) {
                 try {
                     map.current.setLayoutProperty(layerId, 'text-field', [
@@ -710,7 +703,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         const style = map.current.getStyle();
         if (style?.layers) {
             style.layers.forEach(layer => {
-                if (layer.type === 'symbol' && layer.layout?.['text-field'] && !vectorLabelLayerIds.includes(layer.id)) {
+                if (layer.type === 'symbol' && layer.layout?.['text-field'] && !VECTOR_LABEL_LAYER_IDS.includes(layer.id)) {
                     try {
                         map.current?.setLayoutProperty(layer.id, 'text-field', [
                             'coalesce',
@@ -974,17 +967,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                         const vectorSourceId = 'vector-labels-source';
 
                         // Clean up old vector label layers first
-                        const vectorLayerIds = [
-                            'vector-labels-ocean',
-                            'vector-labels-sea',
-                            'vector-labels-continent',
-                            'vector-labels-country',
-                            'vector-labels-state',
-                            'vector-labels-city',
-                            'vector-labels-town',
-                            'vector-labels-village'
-                        ];
-                        vectorLayerIds.forEach(id => {
+                        VECTOR_LABEL_LAYER_IDS.forEach(id => {
                             if (map.current?.getLayer(id)) map.current.removeLayer(id);
                         });
 
@@ -1017,16 +1000,6 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 // Handle Vector Labels Toggle (when layer didn't change)
                 if (layerConfig.type === 'raster') {
                     const vectorSourceId = 'vector-labels-source';
-                    const vectorLayerIds = [
-                        'vector-labels-ocean',
-                        'vector-labels-sea',
-                        'vector-labels-continent',
-                        'vector-labels-country',
-                        'vector-labels-state',
-                        'vector-labels-city',
-                        'vector-labels-town',
-                        'vector-labels-village'
-                    ];
 
                     if (showLabels) {
                         // Check if we need to add the source
@@ -1051,7 +1024,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                         }
                     } else {
                         // Remove vector label layers
-                        vectorLayerIds.forEach(id => {
+                        VECTOR_LABEL_LAYER_IDS.forEach(id => {
                             if (map.current?.getLayer(id)) map.current.removeLayer(id);
                         });
                     }
