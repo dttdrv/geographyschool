@@ -134,7 +134,7 @@ const addVectorLabelLayers = (
             'text-font': [layer.font]
         };
         if (layer.textTransform) layoutProps['text-transform'] = layer.textTransform;
-        if (layer.letterSpacing) layoutProps['text-letter-spacing'] = layer.letterSpacing;
+        if (layer.letterSpacing !== undefined) layoutProps['text-letter-spacing'] = layer.letterSpacing;
 
         // Use layer-specific text color if defined (e.g., blue for oceans), otherwise use default
         const layerTextColor = (layer as any).textColor || textColor;
