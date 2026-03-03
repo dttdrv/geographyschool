@@ -214,6 +214,9 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
+    // Performance: Throttle Map Events
+    const lastMoveTime = useRef<number>(0);
+    const lastMouseMoveTime = useRef<number>(0);
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -628,28 +631,36 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
-                    const center = map.current.getCenter();
-                    const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                const now = performance.now();
+                if (now - lastMoveTime.current > 50) { // ~20fps throttle
+                    if (map.current && onCoordinatesChange) {
+                        const center = map.current.getCenter();
+                        const zoom = map.current.getZoom();
+                        onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    }
+                    lastMoveTime.current = now;
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
-                    const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
-                }
+                const now = performance.now();
+                if (now - lastMouseMoveTime.current > 50) { // ~20fps throttle
+                    if (onCoordinatesChange && map.current) {
+                        const zoom = map.current.getZoom();
+                        onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    }
 
-                // Ruler Logic
-                if (rulerState.current.active && rulerState.current.points.length > 0) {
-                    rulerState.current.tempPoint = [e.lngLat.lng, e.lngLat.lat];
-                    updateRulerLayer();
+                    // Ruler Logic
+                    if (rulerState.current.active && rulerState.current.points.length > 0) {
+                        rulerState.current.tempPoint = [e.lngLat.lng, e.lngLat.lat];
+                        updateRulerLayer();
 
-                    // Live distance update
-                    const line = lineString([rulerState.current.points[0], rulerState.current.tempPoint]);
-                    const distance = length(line, { units: 'kilometers' });
-                    onMeasure(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
+                        // Live distance update
+                        const line = lineString([rulerState.current.points[0], rulerState.current.tempPoint]);
+                        const distance = length(line, { units: 'kilometers' });
+                        onMeasure(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
+                    }
+                    lastMouseMoveTime.current = now;
                 }
             });
 
