@@ -214,6 +214,13 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
+    // Performance Optimization: Throttle high-frequency map events to ~20fps (50ms)
+    // Prevents excessive React re-renders on low-end hardware when panning/moving mouse
+    // Separate refs for move and mousemove to avoid interference, and timeout refs for trailing execution
+    const lastMoveUpdateRef = useRef<number>(0);
+    const moveTimeoutRef = useRef<number | null>(null);
+    const lastMouseMoveUpdateRef = useRef<number>(0);
+    const mouseMoveTimeoutRef = useRef<number | null>(null);
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -627,15 +634,34 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 }
             });
 
-            map.current.on('move', () => {
+            const updateMoveCoordinates = () => {
                 if (map.current && onCoordinatesChange) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
                     onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
                 }
+            };
+
+            map.current.on('move', () => {
+                const now = performance.now();
+                const timeSinceLastUpdate = now - lastMoveUpdateRef.current;
+
+                if (timeSinceLastUpdate < 50) {
+                    if (moveTimeoutRef.current) {
+                        clearTimeout(moveTimeoutRef.current);
+                    }
+                    moveTimeoutRef.current = window.setTimeout(() => {
+                        lastMoveUpdateRef.current = performance.now();
+                        updateMoveCoordinates();
+                    }, 50 - timeSinceLastUpdate);
+                    return; // ~20fps throttle
+                }
+
+                lastMoveUpdateRef.current = now;
+                updateMoveCoordinates();
             });
 
-            map.current.on('mousemove', (e) => {
+            const updateMouseMoveLogic = (e: maplibregl.MapMouseEvent) => {
                 if (onCoordinatesChange && map.current) {
                     const zoom = map.current.getZoom();
                     onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
@@ -651,6 +677,26 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     const distance = length(line, { units: 'kilometers' });
                     onMeasure(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
                 }
+            };
+
+            map.current.on('mousemove', (e) => {
+                const now = performance.now();
+                const timeSinceLastUpdate = now - lastMouseMoveUpdateRef.current;
+
+                if (timeSinceLastUpdate < 50) {
+                    if (mouseMoveTimeoutRef.current) {
+                        clearTimeout(mouseMoveTimeoutRef.current);
+                    }
+                    // Capture event in closure
+                    mouseMoveTimeoutRef.current = window.setTimeout(() => {
+                        lastMouseMoveUpdateRef.current = performance.now();
+                        updateMouseMoveLogic(e);
+                    }, 50 - timeSinceLastUpdate);
+                    return; // ~20fps throttle
+                }
+
+                lastMouseMoveUpdateRef.current = now;
+                updateMouseMoveLogic(e);
             });
 
             // Removed mouseout handler - it was causing coordinates to disappear 
