@@ -1,0 +1,3 @@
+## 2024-05-18 - Throttle high-frequency MapLibre events in React wrappers
+**Learning:** React state updates (`setState` causing re-renders) triggered by fast continuous MapLibre events (like `move` and `mousemove`) can cause severe performance bottlenecks and main thread blocking, particularly on lower-end devices.
+**Action:** Always throttle or debounce MapLibre continuous event handlers before linking them to React state updates using an intermediate `useRef` timestamp check (e.g., to ~20fps/50ms) to ensure smooth map interaction without flooding the React rendering queue.
