@@ -1,0 +1,3 @@
+## 2024-10-27 - [MapLibre React Event Throttling]
+**Learning:** React state updates (`setCoordinates`) should never be linked directly to MapLibre's continuous `move` or `mousemove` events without throttling. React re-renders block the main thread, causing significant jank on lower-end devices during map pans.
+**Action:** Always throttle continuous map events (e.g., using `Date.now()` and a `useRef` for a ~50ms/20fps cap). Crucially, ensure the throttle logic includes a trailing-edge update (via `setTimeout`) to prevent dropping the final coordinate update when map movement stops.
