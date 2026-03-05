@@ -9,6 +9,23 @@ import type { Language } from '../UI/Overlay';
 import { translations } from '../../utils/translations';
 import { checkAndLoadCountries } from '../../utils/searchEngine';
 
+// Pre-calculate static graticules to avoid allocation on every render
+const STATIC_GRATICULE_FEATURES: any[] = [];
+for (let lng = -180; lng <= 180; lng += 10) {
+    STATIC_GRATICULE_FEATURES.push({
+        type: 'Feature',
+        properties: { value: `${lng}°` },
+        geometry: { type: 'LineString', coordinates: [[lng, -90], [lng, 90]] }
+    });
+}
+for (let lat = -80; lat <= 80; lat += 10) {
+    STATIC_GRATICULE_FEATURES.push({
+        type: 'Feature',
+        properties: { value: `${lat}°` },
+        geometry: { type: 'LineString', coordinates: [[-180, lat], [180, lat]] }
+    });
+}
+
 // Vector Label Layer Configuration - Single source of truth for all label types
 const VECTOR_LABEL_LAYERS = [
     // Water name labels (ocean and sea) - uses 'water_name' source-layer
@@ -206,6 +223,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
     const lastActiveLayer = useRef<MapStyleId | null>(null); // Initialize as null to force first update
     const markers = useRef<maplibregl.Marker[]>([]);
     const markerCleanups = useRef<(() => void)[]>([]); // Store cleanup functions for markers
+
+    // Performance state
+    const coordsUpdateTimeout = useRef<number | null>(null);
+    const lastCoordsUpdate = useRef<number>(0);
 
     // Ruler State
     const rulerState = useRef<{ active: boolean; points: number[][]; tempPoint: number[] | null }>({
@@ -629,16 +650,41 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
             map.current.on('move', () => {
                 if (map.current && onCoordinatesChange) {
+                    const now = Date.now();
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+
+                    if (now - lastCoordsUpdate.current > 50) {
+                        lastCoordsUpdate.current = now;
+                        onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    }
+
+                    // Always ensure final trailing update happens
+                    if (coordsUpdateTimeout.current !== null) {
+                        window.clearTimeout(coordsUpdateTimeout.current);
+                    }
+                    coordsUpdateTimeout.current = window.setTimeout(() => {
+                        onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    }, 50);
                 }
             });
 
             map.current.on('mousemove', (e) => {
                 if (onCoordinatesChange && map.current) {
+                    const now = Date.now();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+
+                    if (now - lastCoordsUpdate.current > 50) {
+                        lastCoordsUpdate.current = now;
+                        onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    }
+
+                    if (coordsUpdateTimeout.current !== null) {
+                        window.clearTimeout(coordsUpdateTimeout.current);
+                    }
+                    coordsUpdateTimeout.current = window.setTimeout(() => {
+                        onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    }, 50);
                 }
 
                 // Ruler Logic
@@ -711,7 +757,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                             ['get', 'name:en'],
                             ['get', 'name']
                         ]);
-                    } catch (e) { /* ignore */ }
+                    } catch { /* ignore */ }
                 }
             });
         }
@@ -752,25 +798,9 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             }
 
             if (showGraticules) {
-                const features: any[] = [];
-                for (let lng = -180; lng <= 180; lng += 10) {
-                    features.push({
-                        type: 'Feature',
-                        properties: { value: `${lng}°` },
-                        geometry: { type: 'LineString', coordinates: [[lng, -90], [lng, 90]] }
-                    });
-                }
-                for (let lat = -80; lat <= 80; lat += 10) {
-                    features.push({
-                        type: 'Feature',
-                        properties: { value: `${lat}°` },
-                        geometry: { type: 'LineString', coordinates: [[-180, lat], [180, lat]] }
-                    });
-                }
-
                 map.current.addSource(graticulesSourceId, {
                     type: 'geojson',
-                    data: { type: 'FeatureCollection', features }
+                    data: { type: 'FeatureCollection', features: STATIC_GRATICULE_FEATURES }
                 });
 
                 map.current.addLayer({
