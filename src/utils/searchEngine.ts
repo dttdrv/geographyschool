@@ -29,13 +29,13 @@ export interface SearchResult extends GeoLocation {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let searchIndex: any = null;
 let geoData: GeoLocation[] = [];
-let indexToLocation: Map<number, number> = new Map(); // Maps FlexSearch index -> geoData index
-let loadedIds: Set<string> = new Set();
+const indexToLocation: Map<number, number> = new Map(); // Maps FlexSearch index -> geoData index
+const loadedIds: Set<string> = new Set();
 let indexCounter = 0; // Global counter for incremental indexing
 let isInitialized = false;
 let isInitializing = false;
 let initPromise: Promise<void> | null = null;
-let loadedCountries: Set<string> = new Set();
+const loadedCountries: Set<string> = new Set();
 let countryBboxes: Record<string, number[]> = {}; // [minLat, minLng, maxLat, maxLng, chunkCount?]
 
 // Convert compact GeoNames format to GeoLocation
@@ -177,7 +177,7 @@ export async function initializeSearchEngine(): Promise<void> {
             try {
                 const bboxRes = await fetch('/data/villages/_bboxes.json');
                 countryBboxes = await bboxRes.json();
-            } catch (e) {
+            } catch {
                 console.warn('[SearchEngine] Could not load country bboxes used for dynamic loading');
             }
 
@@ -305,18 +305,34 @@ export function fuzzySearch(query: string, limit: number = 10): SearchResult[] {
     if (results.length < 3 && normalizedQuery.length >= 2) {
         const fuzzyResults: SearchResult[] = [];
 
-        for (const loc of geoData) {
-            const name = loc.name.toLowerCase();
-            const nameAlt = loc.nameAlt?.toLowerCase() || '';
+        // Levenshtein-like quick check: allow 1-2 char difference for short queries
+        const maxDist = normalizedQuery.length <= 4 ? 1 : 2;
 
-            // Levenshtein-like quick check: allow 1-2 char difference for short queries
-            const maxDist = normalizedQuery.length <= 4 ? 1 : 2;
+        // Hoist expensive operations outside the tight loop
+        const queryLen = normalizedQuery.length;
+        const isShort = queryLen <= 3;
+        const prefix = normalizedQuery.slice(0, -1);
+        const typeScores: Record<GeoLocation['type'], number> = {
+            country: 1000, capital: 800, city: 500, town: 400, village: 300, landmark: 350
+        };
 
-            if (fuzzyMatch(normalizedQuery, name, maxDist) ||
-                fuzzyMatch(normalizedQuery, nameAlt, maxDist)) {
-                const typeScores: Record<GeoLocation['type'], number> = {
-                    country: 1000, capital: 800, city: 500, town: 400, village: 300, landmark: 350
-                };
+        for (let i = 0; i < geoData.length; i++) {
+            const loc = geoData[i];
+
+            let match = false;
+            const nameLower = loc.name.toLowerCase();
+
+            if (fuzzyMatch(normalizedQuery, nameLower, maxDist, queryLen, isShort, prefix)) {
+                match = true;
+            } else if (loc.nameAlt) {
+                // Optimize: Lazy evaluation, only process alternate name if primary failed
+                const nameAltLower = loc.nameAlt.toLowerCase();
+                if (fuzzyMatch(normalizedQuery, nameAltLower, maxDist, queryLen, isShort, prefix)) {
+                    match = true;
+                }
+            }
+
+            if (match) {
                 fuzzyResults.push({
                     ...loc,
                     score: typeScores[loc.type] + (loc.population ? Math.log10(loc.population) : 0),
@@ -342,19 +358,20 @@ export function fuzzySearch(query: string, limit: number = 10): SearchResult[] {
 }
 
 // Simple fuzzy match helper (substring + prefix matching)
-function fuzzyMatch(query: string, target: string, maxDist: number): boolean {
+function fuzzyMatch(query: string, target: string, maxDist: number, queryLen: number, isShort: boolean, prefix: string): boolean {
     if (!target) return false;
     if (target.includes(query)) return true;
-    if (target.startsWith(query.slice(0, -1))) return true;
+    if (target.startsWith(prefix)) return true;
 
     // Very basic edit distance check for first few chars
-    if (query.length <= 3 && target.length >= query.length) {
+    if (isShort && target.length >= queryLen) {
         let mismatches = 0;
-        for (let i = 0; i < query.length && i < target.length; i++) {
-            if (query[i] !== target[i]) mismatches++;
-            if (mismatches > maxDist) return false;
+        for (let i = 0; i < queryLen; i++) {
+            if (query[i] !== target[i]) {
+                if (++mismatches > maxDist) return false;
+            }
         }
-        return mismatches <= maxDist;
+        return true;
     }
 
     return false;
