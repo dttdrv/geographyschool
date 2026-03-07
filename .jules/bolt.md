@@ -1,0 +1,3 @@
+## 2024-05-18 - Throttling High-Frequency Map Events
+**Learning:** Raw `mousemove` and `move` events from MapLibre fire extremely fast (often 60+ fps depending on hardware). Passing these directly to React state (`onCoordinatesChange`) at the top level of the app (`App.tsx`) causes the entire UI overlay and React component tree to re-render synchronously. On lower-end devices, this blocks the main thread, causing severe map panning/zooming jank and input latency.
+**Action:** Always throttle or debounce high-frequency map events (like `move` or `mousemove`) to a reasonable framerate (e.g., ~20fps/50ms) using `useRef` before updating React state. Ensure a trailing edge execution is included so the final coordinates (e.g., when the mouse stops) are not dropped.
