@@ -214,6 +214,35 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
+    // Throttling state for coordinates to prevent excessive App re-renders
+    const lastCoordsUpdate = useRef<number>(0);
+    const coordsUpdateTimer = useRef<number | null>(null);
+
+    // Throttled coordinate updater
+    const throttledCoordsUpdate = (lat: number, lng: number, zoom: number, immediate = false) => {
+        if (!onCoordinatesChange) return;
+
+        const now = Date.now();
+        const throttleMs = 50; // ~20fps
+
+        if (coordsUpdateTimer.current) {
+            window.clearTimeout(coordsUpdateTimer.current);
+            coordsUpdateTimer.current = null;
+        }
+
+        if (immediate || now - lastCoordsUpdate.current > throttleMs) {
+            onCoordinatesChange({ lat, lng, zoom });
+            lastCoordsUpdate.current = now;
+        } else {
+            // Trailing edge
+            coordsUpdateTimer.current = window.setTimeout(() => {
+                onCoordinatesChange({ lat, lng, zoom });
+                lastCoordsUpdate.current = Date.now();
+                coordsUpdateTimer.current = null;
+            }, throttleMs - (now - lastCoordsUpdate.current));
+        }
+    };
+
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -621,24 +650,22 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     const zoom = map.current.getZoom();
                     checkAndLoadCountries(center.lat, center.lng, zoom);
 
-                    if (onCoordinatesChange) {
-                        onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
-                    }
+                    throttledCoordsUpdate(center.lat, center.lng, zoom, true);
                 }
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    throttledCoordsUpdate(center.lat, center.lng, zoom);
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    throttledCoordsUpdate(e.lngLat.lat, e.lngLat.lng, zoom);
                 }
 
                 // Ruler Logic
@@ -661,6 +688,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         return () => {
+            if (coordsUpdateTimer.current) {
+                window.clearTimeout(coordsUpdateTimer.current);
+            }
+
             // Clean up all marker event listeners
             markerCleanups.current.forEach(cleanup => cleanup());
             markerCleanups.current = [];
@@ -672,6 +703,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             // Remove map
             map.current?.remove();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Helper: Update Language on Vector Labels
@@ -1033,7 +1065,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         };
 
         updateMapState();
-
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeLayer, showLabels, showBorders, selectedAdminCountry, showGraticules, isMapLoaded, currentLang]);
 
     // Language Update Effect
@@ -1041,6 +1073,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         if (isMapLoaded) {
             updateLanguage();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentLang, isMapLoaded, activeLayer]);
 
     return (
