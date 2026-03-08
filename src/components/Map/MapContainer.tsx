@@ -365,6 +365,9 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             return;
         }
 
+        // Scope the timer variable outside the `try` block so it's accessible in the cleanup function
+        let coordThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+
         try {
             // Initialize with style that includes glyphs for vector label fonts
             const initialStyle = {
@@ -627,18 +630,40 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 }
             });
 
+            // Throttle coordinate updates to ~20fps (50ms) to prevent excessive React re-renders
+            // ⚡ Bolt: This is a critical performance pattern for the codebase to avoid blocking the main thread
+            let lastCoordCallTime = 0;
+
+            const throttledCoordUpdate = (lat: number, lng: number, zoom: number) => {
+                if (!onCoordinatesChange) return;
+
+                const now = Date.now();
+                const timeSinceLastCall = now - lastCoordCallTime;
+
+                if (timeSinceLastCall >= 50) {
+                    lastCoordCallTime = now;
+                    onCoordinatesChange({ lat, lng, zoom });
+                } else {
+                    if (coordThrottleTimer) clearTimeout(coordThrottleTimer);
+                    coordThrottleTimer = setTimeout(() => {
+                        lastCoordCallTime = Date.now();
+                        onCoordinatesChange({ lat, lng, zoom });
+                    }, 50 - timeSinceLastCall);
+                }
+            };
+
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    throttledCoordUpdate(center.lat, center.lng, zoom);
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    throttledCoordUpdate(e.lngLat.lat, e.lngLat.lng, zoom);
                 }
 
                 // Ruler Logic
@@ -668,6 +693,9 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             // Remove all markers
             markers.current.forEach(marker => marker.remove());
             markers.current = [];
+
+            // Clear throttle timer
+            if (coordThrottleTimer) clearTimeout(coordThrottleTimer);
 
             // Remove map
             map.current?.remove();
