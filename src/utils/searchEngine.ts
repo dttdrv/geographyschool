@@ -29,13 +29,13 @@ export interface SearchResult extends GeoLocation {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let searchIndex: any = null;
 let geoData: GeoLocation[] = [];
-let indexToLocation: Map<number, number> = new Map(); // Maps FlexSearch index -> geoData index
-let loadedIds: Set<string> = new Set();
+const indexToLocation: Map<number, number> = new Map(); // Maps FlexSearch index -> geoData index
+const loadedIds: Set<string> = new Set();
 let indexCounter = 0; // Global counter for incremental indexing
 let isInitialized = false;
 let isInitializing = false;
 let initPromise: Promise<void> | null = null;
-let loadedCountries: Set<string> = new Set();
+const loadedCountries: Set<string> = new Set();
 let countryBboxes: Record<string, number[]> = {}; // [minLat, minLng, maxLat, maxLng, chunkCount?]
 
 // Convert compact GeoNames format to GeoLocation
