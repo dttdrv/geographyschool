@@ -207,6 +207,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
     const markers = useRef<maplibregl.Marker[]>([]);
     const markerCleanups = useRef<(() => void)[]>([]); // Store cleanup functions for markers
 
+    // Performance throttling refs for continuous map events
+    const moveThrottleRef = useRef<{ timeout: ReturnType<typeof setTimeout> | null; lastCall: number }>({ timeout: null, lastCall: 0 });
+    const mousemoveThrottleRef = useRef<{ timeout: ReturnType<typeof setTimeout> | null; lastCall: number, latestEvent: maplibregl.MapMouseEvent | null }>({ timeout: null, lastCall: 0, latestEvent: null });
+
     // Ruler State
     const rulerState = useRef<{ active: boolean; points: number[][]; tempPoint: number[] | null }>({
         active: false,
@@ -628,17 +632,61 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (!map.current || !onCoordinatesChange) return;
+
+                const now = Date.now();
+                const timeSinceLastCall = now - moveThrottleRef.current.lastCall;
+
+                const updateCoordinates = () => {
+                    if (!map.current) return;
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
                     onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    moveThrottleRef.current.lastCall = Date.now();
+                };
+
+                if (timeSinceLastCall >= 50) {
+                    updateCoordinates();
+                    if (moveThrottleRef.current.timeout) {
+                        clearTimeout(moveThrottleRef.current.timeout);
+                        moveThrottleRef.current.timeout = null;
+                    }
+                } else if (!moveThrottleRef.current.timeout) {
+                    moveThrottleRef.current.timeout = setTimeout(() => {
+                        updateCoordinates();
+                        moveThrottleRef.current.timeout = null;
+                    }, 50 - timeSinceLastCall);
                 }
             });
 
             map.current.on('mousemove', (e) => {
                 if (onCoordinatesChange && map.current) {
-                    const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    // Update latest event so trailing-edge timeout uses correct coordinates
+                    mousemoveThrottleRef.current.latestEvent = e;
+
+                    const now = Date.now();
+                    const timeSinceLastCall = now - mousemoveThrottleRef.current.lastCall;
+
+                    const updateCoordinates = () => {
+                        if (!map.current || !mousemoveThrottleRef.current.latestEvent) return;
+                        const zoom = map.current.getZoom();
+                        const evt = mousemoveThrottleRef.current.latestEvent;
+                        onCoordinatesChange({ lat: evt.lngLat.lat, lng: evt.lngLat.lng, zoom });
+                        mousemoveThrottleRef.current.lastCall = Date.now();
+                    };
+
+                    if (timeSinceLastCall >= 50) {
+                        updateCoordinates();
+                        if (mousemoveThrottleRef.current.timeout) {
+                            clearTimeout(mousemoveThrottleRef.current.timeout);
+                            mousemoveThrottleRef.current.timeout = null;
+                        }
+                    } else if (!mousemoveThrottleRef.current.timeout) {
+                        mousemoveThrottleRef.current.timeout = setTimeout(() => {
+                            updateCoordinates();
+                            mousemoveThrottleRef.current.timeout = null;
+                        }, 50 - timeSinceLastCall);
+                    }
                 }
 
                 // Ruler Logic
@@ -661,6 +709,14 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         return () => {
+            // Clear pending throttle timeouts to prevent memory leaks or state updates on unmounted component
+            if (moveThrottleRef.current.timeout) {
+                clearTimeout(moveThrottleRef.current.timeout);
+            }
+            if (mousemoveThrottleRef.current.timeout) {
+                clearTimeout(mousemoveThrottleRef.current.timeout);
+            }
+
             // Clean up all marker event listeners
             markerCleanups.current.forEach(cleanup => cleanup());
             markerCleanups.current = [];
@@ -711,7 +767,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                             ['get', 'name:en'],
                             ['get', 'name']
                         ]);
-                    } catch (e) { /* ignore */ }
+                    } catch { /* ignore */ }
                 }
             });
         }
