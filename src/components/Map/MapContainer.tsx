@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
+import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './MapContainer.css';
@@ -214,6 +214,9 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
+    // Throttling State
+    const coordTimeout = useRef<number | null>(null);
+    const lastCoords = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -627,18 +630,39 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 }
             });
 
+            // ⚡ Bolt: Throttled coordinate updates
+            // What: Throttle map 'move' and 'mousemove' events to ~20fps (50ms).
+            // Why: Prevents excessive React re-renders in <App> and <Overlay> during continuous map panning.
+            // Impact: Significantly reduces main thread blocking and memory allocation during map interaction.
+            // Measurement: Use React Profiler to verify <Overlay> re-renders are limited to ~20fps during rapid map movement instead of matching the screen refresh rate (60-120fps).
+            const handleCoordinateUpdate = (coords: { lat: number; lng: number; zoom: number }) => {
+                lastCoords.current = coords;
+                if (coordTimeout.current === null && onCoordinatesChange) {
+                    onCoordinatesChange(coords);
+                    coordTimeout.current = window.setTimeout(() => {
+                        coordTimeout.current = null;
+                        if (lastCoords.current && onCoordinatesChange) {
+                            // Only fire trailing edge if coords actually changed to prevent duplicate state updates
+                            if (lastCoords.current.lat !== coords.lat || lastCoords.current.lng !== coords.lng || lastCoords.current.zoom !== coords.zoom) {
+                                onCoordinatesChange(lastCoords.current);
+                            }
+                        }
+                    }, 50);
+                }
+            };
+
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    handleCoordinateUpdate({ lat: center.lat, lng: center.lng, zoom });
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    handleCoordinateUpdate({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
                 }
 
                 // Ruler Logic
@@ -653,7 +677,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 }
             });
 
-            // Removed mouseout handler - it was causing coordinates to disappear 
+            // Removed mouseout handler - it was causing coordinates to disappear
             // when hovering over UI elements positioned over the map
 
         } catch (error) {
@@ -671,11 +695,16 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
             // Remove map
             map.current?.remove();
+
+            if (coordTimeout.current !== null) {
+                window.clearTimeout(coordTimeout.current);
+                coordTimeout.current = null;
+            }
         };
     }, []);
 
     // Helper: Update Language on Vector Labels
-    const updateLanguage = () => {
+    const updateLanguage = useCallback(() => {
         if (!map.current) return;
 
         // Map language codes to OSM name fields
@@ -694,7 +723,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                         ['get', 'name']
                     ]);
                 } catch (e) {
-                    console.warn(`Could not update language for layer ${layerId}:`, e);
+                    console.warn(`Could not update language for layer ${layerId}`, e);
                 }
             }
         });
@@ -711,11 +740,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                             ['get', 'name:en'],
                             ['get', 'name']
                         ]);
-                    } catch (e) { /* ignore */ }
+                    } catch { /* ignore */ }
                 }
             });
         }
-    };
+    }, [currentLang]);
 
     // Handle Style Changes & Toggles
     useEffect(() => {
@@ -1034,14 +1063,14 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
         updateMapState();
 
-    }, [activeLayer, showLabels, showBorders, selectedAdminCountry, showGraticules, isMapLoaded, currentLang]);
+    }, [activeLayer, showLabels, showBorders, selectedAdminCountry, showGraticules, isMapLoaded, currentLang, updateLanguage]);
 
     // Language Update Effect
     useEffect(() => {
         if (isMapLoaded) {
             updateLanguage();
         }
-    }, [currentLang, isMapLoaded, activeLayer]);
+    }, [currentLang, isMapLoaded, activeLayer, updateLanguage]);
 
     return (
         <div className="map-wrapper">
