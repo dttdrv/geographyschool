@@ -38,7 +38,21 @@ const COLS = {
 async function extractZip(zipPath, destDir) {
     const AdmZip = require('adm-zip');
     const zip = new AdmZip(zipPath);
-    zip.extractAllTo(destDir, true);
+
+    // Ensure destDir is an absolute path with a trailing separator for safe prefix checking
+    const resolvedDest = path.resolve(destDir) + path.sep;
+
+    for (const entry of zip.getEntries()) {
+        const targetPath = path.resolve(destDir, entry.entryName);
+
+        // SECURITY: Prevent Zip Slip path traversal vulnerability
+        if (!targetPath.startsWith(resolvedDest)) {
+            console.warn(`[SECURITY WARNING] Skipping malicious zip entry attempting path traversal: ${entry.entryName}`);
+            continue;
+        }
+
+        zip.extractEntryTo(entry, destDir, true, true);
+    }
 }
 
 function parseGeoNamesLine(line) {
