@@ -29,14 +29,20 @@ export interface SearchResult extends GeoLocation {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let searchIndex: any = null;
 let geoData: GeoLocation[] = [];
-let indexToLocation: Map<number, number> = new Map(); // Maps FlexSearch index -> geoData index
-let loadedIds: Set<string> = new Set();
+const indexToLocation: Map<number, number> = new Map(); // Maps FlexSearch index -> geoData index
+const loadedIds: Set<string> = new Set();
 let indexCounter = 0; // Global counter for incremental indexing
 let isInitialized = false;
 let isInitializing = false;
 let initPromise: Promise<void> | null = null;
-let loadedCountries: Set<string> = new Set();
+const loadedCountries: Set<string> = new Set();
 let countryBboxes: Record<string, number[]> = {}; // [minLat, minLng, maxLat, maxLng, chunkCount?]
+
+// Type priority scores for search ranking
+const TYPE_SCORES: Record<GeoLocation['type'], number> = {
+    country: 1000, capital: 800, city: 500, town: 400, village: 300, landmark: 350
+};
+
 
 // Convert compact GeoNames format to GeoLocation
 // Entry format: { id, n (name), a (ascii), c (country), p (pop), lat, lng, alt (alternateNames array) }
@@ -178,7 +184,7 @@ export async function initializeSearchEngine(): Promise<void> {
                 const bboxRes = await fetch('/data/villages/_bboxes.json');
                 countryBboxes = await bboxRes.json();
             } catch (e) {
-                console.warn('[SearchEngine] Could not load country bboxes used for dynamic loading');
+                console.warn('[SearchEngine] Could not load country bboxes used for dynamic loading', e);
             }
 
             // Create FlexSearch index with optimal settings
@@ -258,10 +264,7 @@ export function search(query: string, limit: number = 10): SearchResult[] {
         // 1. Search rank (higher = better)
         // 2. Type priority (country > capital > city > landmark)
         // 3. Population (for cities)
-        const typeScores: Record<GeoLocation['type'], number> = {
-            country: 1000, capital: 800, city: 500, town: 400, village: 300, landmark: 350
-        };
-        const typeScore = typeScores[loc.type] || 0;
+        const typeScore = TYPE_SCORES[loc.type] || 0;
         const popScore = loc.population ? Math.log10(loc.population) * 10 : 0;
         const rankScore = (indices.length - rank) * 50;
 
@@ -314,12 +317,9 @@ export function fuzzySearch(query: string, limit: number = 10): SearchResult[] {
 
             if (fuzzyMatch(normalizedQuery, name, maxDist) ||
                 fuzzyMatch(normalizedQuery, nameAlt, maxDist)) {
-                const typeScores: Record<GeoLocation['type'], number> = {
-                    country: 1000, capital: 800, city: 500, town: 400, village: 300, landmark: 350
-                };
                 fuzzyResults.push({
                     ...loc,
-                    score: typeScores[loc.type] + (loc.population ? Math.log10(loc.population) : 0),
+                    score: TYPE_SCORES[loc.type] + (loc.population ? Math.log10(loc.population) : 0),
                     matchedField: 'name'
                 });
             }
