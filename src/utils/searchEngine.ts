@@ -18,6 +18,11 @@ export interface GeoLocation {
     lng: number;
     population?: number;
     zoom: number;            // Suggested zoom level
+    _searchName?: string;
+    _searchNameAlt?: string;
+    _searchNameBg?: string;
+    _searchNameIt?: string;
+    _searchAlternateNames?: string[];
 }
 
 export interface SearchResult extends GeoLocation {
@@ -25,17 +30,21 @@ export interface SearchResult extends GeoLocation {
     matchedField: string;
 }
 
+const TYPE_SCORES: Record<GeoLocation['type'], number> = {
+    country: 1000, capital: 800, city: 500, town: 400, village: 300, landmark: 350
+};
+
 // FlexSearch Index with optimized configuration
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let searchIndex: any = null;
 let geoData: GeoLocation[] = [];
-let indexToLocation: Map<number, number> = new Map(); // Maps FlexSearch index -> geoData index
-let loadedIds: Set<string> = new Set();
+const indexToLocation: Map<number, number> = new Map(); // Maps FlexSearch index -> geoData index
+const loadedIds: Set<string> = new Set();
 let indexCounter = 0; // Global counter for incremental indexing
 let isInitialized = false;
 let isInitializing = false;
 let initPromise: Promise<void> | null = null;
-let loadedCountries: Set<string> = new Set();
+const loadedCountries: Set<string> = new Set();
 let countryBboxes: Record<string, number[]> = {}; // [minLat, minLng, maxLat, maxLng, chunkCount?]
 
 // Convert compact GeoNames format to GeoLocation
@@ -74,6 +83,13 @@ function indexLocations(locations: GeoLocation[]) {
         // Deduplication: Skip if ID already loaded
         if (loadedIds.has(loc.id)) return;
         loadedIds.add(loc.id);
+
+        // Pre-compute lowercased fields for faster search
+        loc._searchName = loc.name.toLowerCase();
+        if (loc.nameAlt) loc._searchNameAlt = loc.nameAlt.toLowerCase();
+        if (loc.nameBg) loc._searchNameBg = loc.nameBg.toLowerCase();
+        if (loc.nameIt) loc._searchNameIt = loc.nameIt.toLowerCase();
+        if (loc.alternateNames) loc._searchAlternateNames = loc.alternateNames.map(an => an.toLowerCase());
 
         geoData.push(loc);
         const locIdx = geoData.length - 1; // Correct index after push
@@ -177,7 +193,7 @@ export async function initializeSearchEngine(): Promise<void> {
             try {
                 const bboxRes = await fetch('/data/villages/_bboxes.json');
                 countryBboxes = await bboxRes.json();
-            } catch (e) {
+            } catch {
                 console.warn('[SearchEngine] Could not load country bboxes used for dynamic loading');
             }
 
@@ -258,24 +274,21 @@ export function search(query: string, limit: number = 10): SearchResult[] {
         // 1. Search rank (higher = better)
         // 2. Type priority (country > capital > city > landmark)
         // 3. Population (for cities)
-        const typeScores: Record<GeoLocation['type'], number> = {
-            country: 1000, capital: 800, city: 500, town: 400, village: 300, landmark: 350
-        };
-        const typeScore = typeScores[loc.type] || 0;
+        const typeScore = TYPE_SCORES[loc.type] || 0;
         const popScore = loc.population ? Math.log10(loc.population) * 10 : 0;
         const rankScore = (indices.length - rank) * 50;
 
         // Bonus for exact start match
-        const exactStartBonus = loc.name.toLowerCase().startsWith(normalizedQuery) ? 500 : 0;
+        const exactStartBonus = loc._searchName?.startsWith(normalizedQuery) ? 500 : 0;
 
         const score = rankScore + typeScore + popScore + exactStartBonus;
 
         // Determine matched field
         let matchedField = 'name';
-        if (loc.nameBg && loc.nameBg.toLowerCase().includes(normalizedQuery)) matchedField = 'nameBg';
-        else if (loc.nameIt && loc.nameIt.toLowerCase().includes(normalizedQuery)) matchedField = 'nameIt';
-        else if (loc.nameAlt && loc.nameAlt.toLowerCase().includes(normalizedQuery)) matchedField = 'nameAlt';
-        else if (loc.alternateNames?.some(an => an.toLowerCase().includes(normalizedQuery))) matchedField = 'nameAlt';
+        if (loc._searchNameBg && loc._searchNameBg.includes(normalizedQuery)) matchedField = 'nameBg';
+        else if (loc._searchNameIt && loc._searchNameIt.includes(normalizedQuery)) matchedField = 'nameIt';
+        else if (loc._searchNameAlt && loc._searchNameAlt.includes(normalizedQuery)) matchedField = 'nameAlt';
+        else if (loc._searchAlternateNames?.some(an => an.includes(normalizedQuery))) matchedField = 'nameAlt';
 
         resultMap.set(loc.id, {
             ...loc,
@@ -305,21 +318,18 @@ export function fuzzySearch(query: string, limit: number = 10): SearchResult[] {
     if (results.length < 3 && normalizedQuery.length >= 2) {
         const fuzzyResults: SearchResult[] = [];
 
-        for (const loc of geoData) {
-            const name = loc.name.toLowerCase();
-            const nameAlt = loc.nameAlt?.toLowerCase() || '';
+        // Levenshtein-like quick check: allow 1-2 char difference for short queries
+        const maxDist = normalizedQuery.length <= 4 ? 1 : 2;
 
-            // Levenshtein-like quick check: allow 1-2 char difference for short queries
-            const maxDist = normalizedQuery.length <= 4 ? 1 : 2;
+        for (const loc of geoData) {
+            const name = loc._searchName || '';
+            const nameAlt = loc._searchNameAlt || '';
 
             if (fuzzyMatch(normalizedQuery, name, maxDist) ||
                 fuzzyMatch(normalizedQuery, nameAlt, maxDist)) {
-                const typeScores: Record<GeoLocation['type'], number> = {
-                    country: 1000, capital: 800, city: 500, town: 400, village: 300, landmark: 350
-                };
                 fuzzyResults.push({
                     ...loc,
-                    score: typeScores[loc.type] + (loc.population ? Math.log10(loc.population) : 0),
+                    score: TYPE_SCORES[loc.type] + (loc.population ? Math.log10(loc.population) : 0),
                     matchedField: 'name'
                 });
             }
