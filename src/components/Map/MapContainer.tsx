@@ -215,7 +215,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
     });
 
     // Throttling State for Coordinates
-    const coordsThrottleRef = useRef<NodeJS.Timeout | null>(null);
+    const coordsThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastCoordsRef = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
 
     // Helper to update ruler layer
@@ -652,7 +652,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
                     throttledCoordsUpdate(center.lat, center.lng, zoom);
@@ -660,7 +660,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
                     throttledCoordsUpdate(e.lngLat.lat, e.lngLat.lng, zoom);
                 }
