@@ -40,7 +40,29 @@ async function extractZip(zipPath, destDir) {
     console.log(`Extracting ${zipPath}...`);
     const AdmZip = require('adm-zip');
     const zip = new AdmZip(zipPath);
-    zip.extractAllTo(destDir, true);
+
+    // Secure extraction preventing Zip Slip (path traversal)
+    const targetDir = path.resolve(destDir);
+    const zipEntries = zip.getEntries();
+
+    for (const entry of zipEntries) {
+        const entryPath = entry.entryName;
+        const resolvedPath = path.resolve(targetDir, entryPath);
+
+        // Ensure the resolved path is inside the target directory
+        if (!resolvedPath.startsWith(targetDir + path.sep)) {
+            console.warn(`[SECURITY] Skipping potentially malicious path: ${entryPath}`);
+            continue;
+        }
+
+        if (entry.isDirectory) {
+            fs.mkdirSync(resolvedPath, { recursive: true });
+        } else {
+            const entryData = entry.getData();
+            fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
+            fs.writeFileSync(resolvedPath, entryData);
+        }
+    }
 }
 
 function parseGeoNamesLine(line) {
