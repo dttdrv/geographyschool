@@ -214,6 +214,9 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
+    // Throttling State for Coordinates
+    const coordsThrottleRef = useRef<NodeJS.Timeout | null>(null);
+    const lastCoordsRef = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -614,6 +617,22 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 }
             });
 
+            // Throttled Coordinates Handler
+            const throttledCoordsUpdate = (lat: number, lng: number, zoom: number) => {
+                if (!onCoordinatesChange) return;
+
+                lastCoordsRef.current = { lat, lng, zoom };
+
+                if (!coordsThrottleRef.current) {
+                    coordsThrottleRef.current = setTimeout(() => {
+                        if (lastCoordsRef.current) {
+                            onCoordinatesChange(lastCoordsRef.current);
+                        }
+                        coordsThrottleRef.current = null;
+                    }, 50); // ~20fps
+                }
+            };
+
             // Mouse Move
             map.current.on('moveend', () => {
                 if (map.current) {
@@ -621,6 +640,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     const zoom = map.current.getZoom();
                     checkAndLoadCountries(center.lat, center.lng, zoom);
 
+                    // Clear throttle and update immediately for accuracy on end
+                    if (coordsThrottleRef.current) {
+                        clearTimeout(coordsThrottleRef.current);
+                        coordsThrottleRef.current = null;
+                    }
                     if (onCoordinatesChange) {
                         onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
                     }
@@ -631,14 +655,14 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 if (map.current && onCoordinatesChange) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    throttledCoordsUpdate(center.lat, center.lng, zoom);
                 }
             });
 
             map.current.on('mousemove', (e) => {
                 if (onCoordinatesChange && map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    throttledCoordsUpdate(e.lngLat.lat, e.lngLat.lng, zoom);
                 }
 
                 // Ruler Logic
@@ -661,6 +685,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         return () => {
+            if (coordsThrottleRef.current) {
+                clearTimeout(coordsThrottleRef.current);
+            }
+
             // Clean up all marker event listeners
             markerCleanups.current.forEach(cleanup => cleanup());
             markerCleanups.current = [];
