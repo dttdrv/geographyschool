@@ -214,6 +214,23 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
+    // Throttling for coordinates update to prevent excessive React re-renders (~20fps)
+    const coordsUpdateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingCoords = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
+
+    const throttledCoordsChange = (coords: { lat: number; lng: number; zoom: number }) => {
+        if (!onCoordinatesChange) return;
+        pendingCoords.current = coords;
+        if (coordsUpdateTimer.current === null) {
+            coordsUpdateTimer.current = setTimeout(() => {
+                if (pendingCoords.current) {
+                    onCoordinatesChange(pendingCoords.current);
+                }
+                coordsUpdateTimer.current = null;
+            }, 50);
+        }
+    };
+
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -622,23 +639,28 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     checkAndLoadCountries(center.lat, center.lng, zoom);
 
                     if (onCoordinatesChange) {
+                        // Clear pending updates on moveend to avoid stale updates
+                        if (coordsUpdateTimer.current !== null) {
+                            clearTimeout(coordsUpdateTimer.current);
+                            coordsUpdateTimer.current = null;
+                        }
                         onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
                     }
                 }
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    throttledCoordsChange({ lat: center.lat, lng: center.lng, zoom });
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    throttledCoordsChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
                 }
 
                 // Ruler Logic
