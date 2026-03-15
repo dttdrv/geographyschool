@@ -1,0 +1,3 @@
+## 2024-05-26 - Throttle Continuous MapLibre Events
+**Learning:** Linking fast, continuous map events (like `mousemove` and `move` in MapLibre/Mapbox) directly to React state updates (`onCoordinatesChange`) causes massive re-render cascades that can severely degrade frontend performance and block the main thread.
+**Action:** Always throttle or debounce high-frequency map events (e.g., to ~20fps/50ms using `useRef`) before passing them up to React state. Ensure trailing-edge execution so final coordinates are not dropped when the user stops interacting with the map, and always clear timeouts on component unmount to prevent memory leaks.
