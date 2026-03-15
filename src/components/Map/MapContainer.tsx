@@ -207,6 +207,33 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
     const markers = useRef<maplibregl.Marker[]>([]);
     const markerCleanups = useRef<(() => void)[]>([]); // Store cleanup functions for markers
 
+    // Throttle State for coordinates
+    const throttleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastCoords = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
+
+    // Throttled function to avoid massive React re-renders on every map event
+    const throttledOnCoordinatesChange = (coords: { lat: number; lng: number; zoom: number }) => {
+        if (!onCoordinatesChange) return;
+
+        lastCoords.current = coords;
+
+        if (!throttleTimer.current) {
+            // Leading edge execution
+            onCoordinatesChange(coords);
+
+            throttleTimer.current = setTimeout(() => {
+                throttleTimer.current = null;
+                // Trailing edge execution if coordinates changed during the throttle period
+                if (lastCoords.current &&
+                    (lastCoords.current.lat !== coords.lat ||
+                     lastCoords.current.lng !== coords.lng ||
+                     lastCoords.current.zoom !== coords.zoom)) {
+                    onCoordinatesChange(lastCoords.current);
+                }
+            }, 50); // ~20fps
+        }
+    };
+
     // Ruler State
     const rulerState = useRef<{ active: boolean; points: number[][]; tempPoint: number[] | null }>({
         active: false,
@@ -631,14 +658,14 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 if (map.current && onCoordinatesChange) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    throttledOnCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
                 }
             });
 
             map.current.on('mousemove', (e) => {
                 if (onCoordinatesChange && map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    throttledOnCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
                 }
 
                 // Ruler Logic
@@ -661,6 +688,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         return () => {
+            // Clear coordinate throttle timer
+            if (throttleTimer.current) {
+                clearTimeout(throttleTimer.current);
+            }
+
             // Clean up all marker event listeners
             markerCleanups.current.forEach(cleanup => cleanup());
             markerCleanups.current = [];
