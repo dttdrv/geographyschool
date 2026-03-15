@@ -1,0 +1,4 @@
+## 2024-05-18 - [Add Content Security Policy (CSP) headers]
+**Vulnerability:** Missing Content Security Policy (CSP) headers in `index.html`.
+**Learning:** The application is a React SPA that heavily relies on external map services (MapLibre, CartoDB, ArcGIS, OpenFreeMap, RainViewer). Without a CSP, the application is vulnerable to Cross-Site Scripting (XSS) and data injection attacks if any of these external services are compromised or if user input is mishandled.
+**Prevention:** Implementing a strict CSP via a `<meta>` tag in `index.html` mitigates these risks by explicitly allowing only trusted domains for scripts, styles, fonts, images, and connections (`connect-src`). It's crucial to correctly configure `connect-src` for vector fetch requests and `img-src` for raster images to prevent silently blocking legitimate requests.
