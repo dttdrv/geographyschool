@@ -207,6 +207,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
     const markers = useRef<maplibregl.Marker[]>([]);
     const markerCleanups = useRef<(() => void)[]>([]); // Store cleanup functions for markers
 
+    // Throttle Refs for Map Move
+    const throttleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const latestCoordsRef = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
+
     // Ruler State
     const rulerState = useRef<{ active: boolean; points: number[][]; tempPoint: number[] | null }>({
         active: false,
@@ -614,6 +618,18 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 }
             });
 
+            // Helper to throttle coordinate updates
+            const queueCoordinateUpdate = () => {
+                if (!throttleTimeoutRef.current) {
+                    throttleTimeoutRef.current = setTimeout(() => {
+                        if (latestCoordsRef.current) {
+                            onCoordinatesChange(latestCoordsRef.current);
+                        }
+                        throttleTimeoutRef.current = null;
+                    }, 50); // ~20fps
+                }
+            };
+
             // Mouse Move
             map.current.on('moveend', () => {
                 if (map.current) {
@@ -622,23 +638,30 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     checkAndLoadCountries(center.lat, center.lng, zoom);
 
                     if (onCoordinatesChange) {
+                        // Clear pending timeouts and immediately update
+                        if (throttleTimeoutRef.current) {
+                            clearTimeout(throttleTimeoutRef.current);
+                            throttleTimeoutRef.current = null;
+                        }
                         onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
                     }
                 }
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    latestCoordsRef.current = { lat: center.lat, lng: center.lng, zoom };
+                    queueCoordinateUpdate();
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    latestCoordsRef.current = { lat: e.lngLat.lat, lng: e.lngLat.lng, zoom };
+                    queueCoordinateUpdate();
                 }
 
                 // Ruler Logic
@@ -661,6 +684,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         return () => {
+            if (throttleTimeoutRef.current) {
+                clearTimeout(throttleTimeoutRef.current);
+            }
+
             // Clean up all marker event listeners
             markerCleanups.current.forEach(cleanup => cleanup());
             markerCleanups.current = [];
