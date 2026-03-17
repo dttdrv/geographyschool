@@ -639,13 +639,14 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     }
                 } else if (!coordsUpdateRef.current.timeout) {
                     // Set trailing edge timeout
+                    const remainingTime = 50 - (now - coordsUpdateRef.current.lastTime);
                     coordsUpdateRef.current.timeout = setTimeout(() => {
                         if (coordsUpdateRef.current.latestCoords) {
                             onCoordinatesChange(coordsUpdateRef.current.latestCoords);
                         }
                         coordsUpdateRef.current.lastTime = Date.now();
                         coordsUpdateRef.current.timeout = null;
-                    }, 50);
+                    }, Math.max(0, remainingTime));
                 }
             };
 
@@ -656,13 +657,18 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     checkAndLoadCountries(center.lat, center.lng, zoom);
 
                     if (onCoordinatesChange) {
+                        if (coordsUpdateRef.current.timeout) {
+                            clearTimeout(coordsUpdateRef.current.timeout);
+                            coordsUpdateRef.current.timeout = null;
+                        }
+                        coordsUpdateRef.current.lastTime = Date.now();
                         onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
                     }
                 }
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
                     throttledCoordsChange({ lat: center.lat, lng: center.lng, zoom });
