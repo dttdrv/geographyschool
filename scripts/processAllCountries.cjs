@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { downloadFile } = require('./utils/secureDownload.cjs');
+const { extractZip } = require('./utils/secureZip.cjs');
 const readline = require('readline');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'public', 'data', 'villages');
@@ -33,13 +34,6 @@ const COLS = {
     countryCode: 8,
     population: 14,
 };
-
-
-async function extractZip(zipPath, destDir) {
-    const AdmZip = require('adm-zip');
-    const zip = new AdmZip(zipPath);
-    zip.extractAllTo(destDir, true);
-}
 
 function parseGeoNamesLine(line) {
     const fields = line.split('\t');

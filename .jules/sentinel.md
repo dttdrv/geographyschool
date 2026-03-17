@@ -1,0 +1,4 @@
+## 2026-03-17 - [Zip Slip Protection]
+**Vulnerability:** The `adm-zip` library's `extractAllTo` method is vulnerable to Zip Slip path traversal attacks when extracting files from untrusted sources. An attacker could craft a malicious zip file with entries like `../../../../etc/passwd` to overwrite files outside the intended destination directory.
+**Learning:** When extracting zip archives, never blindly trust the file paths inside the archive. Always iterate through the entries and validate that the resolved extraction path strictly resides within the intended target directory boundary before writing to disk.
+**Prevention:** Replace direct `zip.extractAllTo()` calls with custom extraction logic that uses `path.resolve` and `path.sep` to verify that `entryPath.startsWith(targetDir + path.sep)` before writing the entry's data.
