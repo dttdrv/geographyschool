@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { downloadFile } = require('./utils/secureDownload.cjs');
+const { extractZip } = require('./utils/secureZip.cjs');
 const readline = require('readline');
 
 const BG_URL = 'https://download.geonames.org/export/dump/BG.zip';
@@ -27,14 +28,6 @@ const COLS = {
     countryCode: 8,
     population: 14,
 };
-
-
-async function extractZip(zipPath, destDir) {
-    console.log(`Extracting ${zipPath}...`);
-    const AdmZip = require('adm-zip');
-    const zip = new AdmZip(zipPath);
-    zip.extractAllTo(destDir, true);
-}
 
 function parseGeoNamesLine(line) {
     const fields = line.split('\t');
