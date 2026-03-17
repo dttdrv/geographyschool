@@ -207,6 +207,13 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
     const markers = useRef<maplibregl.Marker[]>([]);
     const markerCleanups = useRef<(() => void)[]>([]); // Store cleanup functions for markers
 
+    // Throttle State for Coordinates
+    const coordsUpdateRef = useRef<{ timeout: ReturnType<typeof setTimeout> | null; lastTime: number; latestCoords: { lat: number; lng: number; zoom: number } | null }>({
+        timeout: null,
+        lastTime: 0,
+        latestCoords: null
+    });
+
     // Ruler State
     const rulerState = useRef<{ active: boolean; points: number[][]; tempPoint: number[] | null }>({
         active: false,
@@ -615,6 +622,34 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             // Mouse Move
+            // Helper for throttling coordinate updates
+            const throttledCoordsChange = (coords: { lat: number; lng: number; zoom: number }) => {
+                if (!onCoordinatesChange) return;
+
+                const now = Date.now();
+                coordsUpdateRef.current.latestCoords = coords;
+
+                // 50ms throttle limit (~20fps)
+                if (now - coordsUpdateRef.current.lastTime >= 50) {
+                    onCoordinatesChange(coords);
+                    coordsUpdateRef.current.lastTime = now;
+                    if (coordsUpdateRef.current.timeout) {
+                        clearTimeout(coordsUpdateRef.current.timeout);
+                        coordsUpdateRef.current.timeout = null;
+                    }
+                } else if (!coordsUpdateRef.current.timeout) {
+                    // Set trailing edge timeout
+                    const remainingTime = 50 - (now - coordsUpdateRef.current.lastTime);
+                    coordsUpdateRef.current.timeout = setTimeout(() => {
+                        if (coordsUpdateRef.current.latestCoords) {
+                            onCoordinatesChange(coordsUpdateRef.current.latestCoords);
+                        }
+                        coordsUpdateRef.current.lastTime = Date.now();
+                        coordsUpdateRef.current.timeout = null;
+                    }, Math.max(0, remainingTime));
+                }
+            };
+
             map.current.on('moveend', () => {
                 if (map.current) {
                     const center = map.current.getCenter();
@@ -622,23 +657,28 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     checkAndLoadCountries(center.lat, center.lng, zoom);
 
                     if (onCoordinatesChange) {
+                        if (coordsUpdateRef.current.timeout) {
+                            clearTimeout(coordsUpdateRef.current.timeout);
+                            coordsUpdateRef.current.timeout = null;
+                        }
+                        coordsUpdateRef.current.lastTime = Date.now();
                         onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
                     }
                 }
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    throttledCoordsChange({ lat: center.lat, lng: center.lng, zoom });
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    throttledCoordsChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
                 }
 
                 // Ruler Logic
@@ -661,6 +701,12 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         return () => {
+            const timeout = coordsUpdateRef.current.timeout;
+            if (timeout) {
+                clearTimeout(timeout);
+                coordsUpdateRef.current.timeout = null;
+            }
+
             // Clean up all marker event listeners
             markerCleanups.current.forEach(cleanup => cleanup());
             markerCleanups.current = [];
