@@ -214,6 +214,12 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         tempPoint: null
     });
 
+    const throttleState = useRef<{
+        lastUpdate: number;
+        timeout: ReturnType<typeof setTimeout> | null;
+        latestMouseMove: { lat: number; lng: number } | null;
+    }>({ lastUpdate: 0, timeout: null, latestMouseMove: null });
+
 
     // Helper to update ruler layer
     const updateRulerLayer = () => {
@@ -631,14 +637,54 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 if (map.current && onCoordinatesChange) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+
+                    const now = Date.now();
+                    const TIME_BETWEEN_UPDATES = 50; // ~20fps
+
+                    if (now - throttleState.current.lastUpdate >= TIME_BETWEEN_UPDATES) {
+                        onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                        throttleState.current.lastUpdate = now;
+
+                        if (throttleState.current.timeout) {
+                            clearTimeout(throttleState.current.timeout);
+                        }
+
+                        throttleState.current.timeout = setTimeout(() => {
+                            if (map.current) {
+                                const finalCenter = map.current.getCenter();
+                                onCoordinatesChange({ lat: finalCenter.lat, lng: finalCenter.lng, zoom: map.current.getZoom() });
+                            }
+                        }, TIME_BETWEEN_UPDATES);
+                    }
                 }
             });
 
             map.current.on('mousemove', (e) => {
+                throttleState.current.latestMouseMove = { lat: e.lngLat.lat, lng: e.lngLat.lng };
                 if (onCoordinatesChange && map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+
+                    const now = Date.now();
+                    const TIME_BETWEEN_UPDATES = 50; // ~20fps
+
+                    if (now - throttleState.current.lastUpdate >= TIME_BETWEEN_UPDATES) {
+                        onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                        throttleState.current.lastUpdate = now;
+
+                        if (throttleState.current.timeout) {
+                            clearTimeout(throttleState.current.timeout);
+                        }
+
+                        throttleState.current.timeout = setTimeout(() => {
+                            if (map.current && throttleState.current.latestMouseMove) {
+                                onCoordinatesChange({
+                                    lat: throttleState.current.latestMouseMove.lat,
+                                    lng: throttleState.current.latestMouseMove.lng,
+                                    zoom: map.current.getZoom()
+                                });
+                            }
+                        }, TIME_BETWEEN_UPDATES);
+                    }
                 }
 
                 // Ruler Logic
@@ -1042,6 +1088,15 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             updateLanguage();
         }
     }, [currentLang, isMapLoaded, activeLayer]);
+
+    // Cleanup throttle timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (throttleState.current.timeout) {
+                clearTimeout(throttleState.current.timeout);
+            }
+        };
+    }, []);
 
     return (
         <div className="map-wrapper">
