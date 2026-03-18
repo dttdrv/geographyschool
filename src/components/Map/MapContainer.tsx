@@ -873,7 +873,8 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             if (selectedAdminCountry) {
                 // GeoBoundaries URL Structure (using media proxy for LFS support):
                 // https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/{ISO}/ADM1/geoBoundaries-{ISO}-ADM1.geojson
-                const url = `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${selectedAdminCountry}/ADM1/geoBoundaries-${selectedAdminCountry}-ADM1.geojson`;
+                const safeCountryCode = encodeURIComponent(selectedAdminCountry);
+                const url = `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${safeCountryCode}/ADM1/geoBoundaries-${safeCountryCode}-ADM1.geojson`;
 
                 map.current.addSource(globalAdminSourceId, {
                     type: 'geojson',
