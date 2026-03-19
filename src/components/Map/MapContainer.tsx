@@ -527,7 +527,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     if (lngEl) lngEl.textContent = `${t.lng}: ${e.lngLat.lng.toFixed(5)}`;
 
                     const mapsLinkEl = popupContent.querySelector('#popup-google-maps-link') as HTMLAnchorElement;
-                    if (mapsLinkEl) mapsLinkEl.href = `https://www.google.com/maps?q=${e.lngLat.lat},${e.lngLat.lng}`;
+                    if (mapsLinkEl) mapsLinkEl.href = `https://www.google.com/maps?q=${encodeURIComponent(e.lngLat.lat)},${encodeURIComponent(e.lngLat.lng)}`;
 
                     const mapsTextEl = popupContent.querySelector('#popup-google-maps-text');
                     if (mapsTextEl) mapsTextEl.textContent = t.openInGoogleMaps;
@@ -873,7 +873,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             if (selectedAdminCountry) {
                 // GeoBoundaries URL Structure (using media proxy for LFS support):
                 // https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/{ISO}/ADM1/geoBoundaries-{ISO}-ADM1.geojson
-                const url = `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${selectedAdminCountry}/ADM1/geoBoundaries-${selectedAdminCountry}-ADM1.geojson`;
+                const url = `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${encodeURIComponent(selectedAdminCountry)}/ADM1/geoBoundaries-${encodeURIComponent(selectedAdminCountry)}-ADM1.geojson`;
 
                 map.current.addSource(globalAdminSourceId, {
                     type: 'geojson',
