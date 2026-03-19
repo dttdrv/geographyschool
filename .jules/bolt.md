@@ -1,0 +1,3 @@
+## 2026-03-19 - Prevent Excessive Map Coordinates Re-renders
+**Learning:** The Maplibregl 'move' and 'mousemove' events fire hundreds of times per second. Tying these directly to React state in the main `App.tsx` component causes massive re-renders of the entire application (including Overlay components) which drops frames. Throttling/debouncing is essential for these high-frequency map events to keep the application usable.
+**Action:** Throttle high-frequency continuous events (like `mousemove` or `move`) at the source component (e.g. MapContainer) using a `setTimeout` mechanism with trailing-edge guarantees before passing them up to parent React state.

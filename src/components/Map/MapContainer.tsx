@@ -365,8 +365,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             return;
         }
 
+        let coordsUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
         try {
             // Initialize with style that includes glyphs for vector label fonts
+            let lastCoordsUpdate = 0;
+            let latestCoords: { lat: number; lng: number; zoom: number } | null = null;
             const initialStyle = {
                 version: 8,
                 sources: {},
@@ -615,6 +618,32 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             // Mouse Move
+
+            // ⚡ Bolt: Throttle high-frequency map events (move, mousemove) to 50ms (20 FPS).
+            // This prevents massive React component tree re-renders in App.tsx while maintaining responsive UI.
+            // Includes trailing-edge guarantee via setTimeout to ensure final coordinates are always captured.
+            const emitThrottledCoords = (coords: { lat: number; lng: number; zoom: number }) => {
+                if (!onCoordinatesChange) return;
+                latestCoords = coords;
+                const now = Date.now();
+                if (now - lastCoordsUpdate > 50) {
+                    onCoordinatesChange(coords);
+                    lastCoordsUpdate = now;
+                    if (coordsUpdateTimeout) {
+                        clearTimeout(coordsUpdateTimeout);
+                        coordsUpdateTimeout = null;
+                    }
+                } else if (!coordsUpdateTimeout) {
+                    coordsUpdateTimeout = setTimeout(() => {
+                        if (latestCoords && onCoordinatesChange) {
+                            onCoordinatesChange(latestCoords);
+                        }
+                        lastCoordsUpdate = Date.now();
+                        coordsUpdateTimeout = null;
+                    }, 50);
+                }
+            };
+
             map.current.on('moveend', () => {
                 if (map.current) {
                     const center = map.current.getCenter();
@@ -628,17 +657,17 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    emitThrottledCoords({ lat: center.lat, lng: center.lng, zoom });
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    emitThrottledCoords({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
                 }
 
                 // Ruler Logic
@@ -661,6 +690,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         return () => {
+            // Clear coordinate timeout
+            if (coordsUpdateTimeout) {
+                clearTimeout(coordsUpdateTimeout);
+            }
+
             // Clean up all marker event listeners
             markerCleanups.current.forEach(cleanup => cleanup());
             markerCleanups.current = [];
@@ -668,6 +702,8 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             // Remove all markers
             markers.current.forEach(marker => marker.remove());
             markers.current = [];
+
+
 
             // Remove map
             map.current?.remove();
