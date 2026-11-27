@@ -1,16 +1,35 @@
-import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './MapContainer.css';
 import './Popup.css';
 import { MAP_STYLES, type MapStyleId } from './mapStyles';
 import { point, lineString, length } from '@turf/turf';
+import type { Feature, Point } from 'geojson';
 import type { Language } from '../UI/Overlay';
 import { translations } from '../../utils/translations';
 import { checkAndLoadCountries } from '../../utils/searchEngine';
 
+const MAP_SLOTS = ['slot-base', 'slot-data', 'slot-overlays', 'slot-labels', 'slot-ui'] as const;
+const ISO_ALPHA3_REGEX = /^[A-Z]{3}$/;
+
+interface VectorLabelLayerConfig {
+    id: string;
+    class: string;
+    sourceLayer?: string;
+    minzoom?: number;
+    maxzoom?: number;
+    fontSize: number | maplibregl.ExpressionSpecification;
+    font: string;
+    textTransform?: 'uppercase' | 'lowercase' | 'none';
+    letterSpacing?: number;
+    haloWidth: number;
+    opacity?: number | maplibregl.ExpressionSpecification;
+    textColor?: string;
+}
+
 // Vector Label Layer Configuration - Single source of truth for all label types
-const VECTOR_LABEL_LAYERS = [
+const VECTOR_LABEL_LAYERS: VectorLabelLayerConfig[] = [
     // Water name labels (ocean and sea) - uses 'water_name' source-layer
     {
         id: 'vector-labels-ocean',
@@ -18,9 +37,9 @@ const VECTOR_LABEL_LAYERS = [
         sourceLayer: 'water_name',
         minzoom: undefined,
         maxzoom: 6,
-        fontSize: ['interpolate', ['linear'], ['zoom'], 1, 14, 4, 20] as any,
+        fontSize: ['interpolate', ['linear'], ['zoom'], 1, 14, 4, 20],
         font: 'Noto Sans Italic',
-        textTransform: 'uppercase' as const,
+        textTransform: 'uppercase',
         letterSpacing: 0.3,
         haloWidth: 2,
         opacity: 0.8,
@@ -32,7 +51,7 @@ const VECTOR_LABEL_LAYERS = [
         sourceLayer: 'water_name',
         minzoom: 3,
         maxzoom: undefined,
-        fontSize: ['interpolate', ['linear'], ['zoom'], 3, 11, 6, 16] as any,
+        fontSize: ['interpolate', ['linear'], ['zoom'], 3, 11, 6, 16],
         font: 'Noto Sans Italic',
         textTransform: undefined,
         letterSpacing: 0.15,
@@ -47,19 +66,19 @@ const VECTOR_LABEL_LAYERS = [
         maxzoom: 4,
         fontSize: 18,
         font: 'Noto Sans Bold',
-        textTransform: 'uppercase' as const,
+        textTransform: 'uppercase',
         letterSpacing: 0.2,
         haloWidth: 2,
-        opacity: ['interpolate', ['linear'], ['zoom'], 1, 1, 4, 0] as any
+        opacity: ['interpolate', ['linear'], ['zoom'], 1, 1, 4, 0]
     },
     {
         id: 'vector-labels-country',
         class: 'country',
         minzoom: 2,
         maxzoom: undefined,
-        fontSize: ['interpolate', ['linear'], ['zoom'], 2, 10, 6, 14] as any,
+        fontSize: ['interpolate', ['linear'], ['zoom'], 2, 10, 6, 14],
         font: 'Noto Sans Regular',
-        textTransform: 'uppercase' as const,
+        textTransform: 'uppercase',
         letterSpacing: 0.1,
         haloWidth: 2,
         opacity: undefined
@@ -81,7 +100,7 @@ const VECTOR_LABEL_LAYERS = [
         class: 'city',
         minzoom: 9,
         maxzoom: undefined,
-        fontSize: ['interpolate', ['linear'], ['zoom'], 7, 10, 12, 16] as any,
+        fontSize: ['interpolate', ['linear'], ['zoom'], 7, 10, 12, 16],
         font: 'Noto Sans Regular',
         textTransform: undefined,
         letterSpacing: undefined,
@@ -117,18 +136,28 @@ const VECTOR_LABEL_LAYERS = [
 // Pre-calculate IDs to avoid allocation in updateLanguage
 const VECTOR_LABEL_LAYER_IDS = VECTOR_LABEL_LAYERS.map(layer => layer.id);
 
+const getLanguageField = (lang: Language): string => {
+    if (lang === 'en') return 'name:en';
+    if (lang === 'bg') return 'name:bg';
+    if (lang === 'it') return 'name:it';
+    return 'name';
+};
+
 // Helper to add all vector label layers
 const addVectorLabelLayers = (
     mapInstance: maplibregl.Map,
     sourceId: string,
     langField: string,
     textColor: string,
-    haloColor: string
+    haloColor: string,
+    beforeId?: string
 ) => {
+    const resolvedBeforeId = beforeId && mapInstance.getLayer(beforeId) ? beforeId : undefined;
+
     VECTOR_LABEL_LAYERS.forEach(layer => {
         if (mapInstance.getLayer(layer.id)) return; // Skip if already exists
 
-        const layoutProps: any = {
+        const layoutProps: NonNullable<maplibregl.SymbolLayerSpecification['layout']> = {
             'text-field': ['coalesce', ['get', langField], ['get', 'name:en'], ['get', 'name']],
             'text-size': layer.fontSize,
             'text-font': [layer.font]
@@ -137,9 +166,9 @@ const addVectorLabelLayers = (
         if (layer.letterSpacing !== undefined) layoutProps['text-letter-spacing'] = layer.letterSpacing;
 
         // Use layer-specific text color if defined (e.g., blue for oceans), otherwise use default
-        const layerTextColor = (layer as any).textColor || textColor;
+        const layerTextColor = layer.textColor || textColor;
 
-        const paintProps: any = {
+        const paintProps: NonNullable<maplibregl.SymbolLayerSpecification['paint']> = {
             'text-color': layerTextColor,
             'text-halo-color': haloColor,
             'text-halo-width': layer.haloWidth
@@ -147,9 +176,9 @@ const addVectorLabelLayers = (
         if (layer.opacity !== undefined) paintProps['text-opacity'] = layer.opacity;
 
         // Use layer-specific source-layer if defined (water_name for oceans), otherwise default to 'place'
-        const sourceLayer = (layer as any).sourceLayer || 'place';
+        const sourceLayer = layer.sourceLayer || 'place';
 
-        const layerDef: any = {
+        const layerDef: maplibregl.SymbolLayerSpecification = {
             id: layer.id,
             type: 'symbol',
             source: sourceId,
@@ -161,7 +190,7 @@ const addVectorLabelLayers = (
         if (layer.minzoom !== undefined) layerDef.minzoom = layer.minzoom;
         if (layer.maxzoom !== undefined) layerDef.maxzoom = layer.maxzoom;
 
-        mapInstance.addLayer(layerDef);
+        mapInstance.addLayer(layerDef, resolvedBeforeId);
     });
 };
 
@@ -206,6 +235,22 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
     const lastActiveLayer = useRef<MapStyleId | null>(null); // Initialize as null to force first update
     const markers = useRef<maplibregl.Marker[]>([]);
     const markerCleanups = useRef<(() => void)[]>([]); // Store cleanup functions for markers
+    const userLocationMarker = useRef<maplibregl.Marker | null>(null);
+
+    // Keep latest props accessible inside mount-only map event listeners
+    const currentLangRef = useRef<Language>(currentLang);
+    const onMeasureRef = useRef(onMeasure);
+    const onCoordinatesChangeRef = useRef(onCoordinatesChange);
+    const activeToolPropRef = useRef(activeToolRef);
+    const onToolChangePropRef = useRef(onToolChangeRef);
+
+    useEffect(() => {
+        currentLangRef.current = currentLang;
+        onMeasureRef.current = onMeasure;
+        onCoordinatesChangeRef.current = onCoordinatesChange;
+        activeToolPropRef.current = activeToolRef;
+        onToolChangePropRef.current = onToolChangeRef;
+    }, [currentLang, onMeasure, onCoordinatesChange, activeToolRef, onToolChangeRef]);
 
     // Ruler State
     const rulerState = useRef<{ active: boolean; points: number[][]; tempPoint: number[] | null }>({
@@ -216,11 +261,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
 
     // Helper to update ruler layer
-    const updateRulerLayer = () => {
+    const updateRulerLayer = useCallback(() => {
         if (!map.current || !map.current.getSource('ruler-source')) return;
 
         const source = map.current.getSource('ruler-source') as maplibregl.GeoJSONSource;
-        const features: any[] = [];
+        const features: Feature[] = [];
 
         if (rulerState.current.points.length > 0) {
             // Points
@@ -241,10 +286,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         source.setData({ type: 'FeatureCollection', features });
-    };
+    }, []);
 
     // Helper to set active tool
-    const setActiveTool = (tool: string | null) => {
+    const setActiveTool = useCallback((tool: string | null) => {
         if (!map.current || !mapContainer.current) return;
 
         // Reset previous state
@@ -261,7 +306,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             map.current.getCanvas().style.cursor = 'pointer';
             mapContainer.current.classList.add('tool-marker');
         }
-    };
+    }, [updateRulerLayer]);
 
     useImperativeHandle(ref, () => ({
         flyToLocation: (center, zoom, bbox, name) => {
@@ -284,13 +329,16 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                             [point.x + 100, point.y + 100]
                         ];
 
+                        const queryableLayers = [
+                            'vector-labels-city',
+                            'vector-labels-town',
+                            'vector-labels-village'
+                        ].filter(id => Boolean(mapInstance.getLayer(id)));
+
+                        if (queryableLayers.length === 0) return;
+
                         const features = mapInstance.queryRenderedFeatures(searchBox, {
-                            layers: [
-                                'vector-labels-city',
-                                'vector-labels-town',
-                                'vector-labels-village',
-                                'vector-labels-capital' // If exists
-                            ]
+                            layers: queryableLayers
                         });
 
                         const targetName = name.toLowerCase();
@@ -298,16 +346,16 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                         // Find a feature that matches the name
                         const match = features.find(f => {
                             const p = f.properties || {};
-                            return (p.name && p.name.toLowerCase() === targetName) ||
-                                (p['name:en'] && p['name:en'].toLowerCase() === targetName) ||
-                                (p['name:bg'] && p['name:bg'].toLowerCase() === targetName) ||
-                                (p['name:it'] && p['name:it'].toLowerCase() === targetName);
+                            return (typeof p.name === 'string' && p.name.toLowerCase() === targetName) ||
+                                (typeof p['name:en'] === 'string' && p['name:en'].toLowerCase() === targetName) ||
+                                (typeof p['name:bg'] === 'string' && p['name:bg'].toLowerCase() === targetName) ||
+                                (typeof p['name:it'] === 'string' && p['name:it'].toLowerCase() === targetName);
                         });
 
                         if (match && match.geometry.type === 'Point') {
-                            const coords = (match.geometry as any).coordinates; // [lng, lat]
+                            const coords = (match.geometry as Point).coordinates; // [lng, lat]
                             // Gently ease to the REAL label position
-                            mapInstance.easeTo({ center: coords as [number, number], duration: 600, easing: (t) => t * (2 - t) });
+                            mapInstance.easeTo({ center: [coords[0], coords[1]], duration: 600, easing: (t) => t * (2 - t) });
                         }
                     };
 
@@ -338,10 +386,13 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                             essential: true
                         });
 
+                        // Replace any previous user location marker
+                        userLocationMarker.current?.remove();
+
                         // Add a minimalistic blue dot marker
                         const bluePin = document.createElement('div');
                         bluePin.style.cssText = 'width: 14px; height: 14px; background: #3b82f6; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(59,130,246,0.4);';
-                        new maplibregl.Marker({ element: bluePin, anchor: 'center' })
+                        userLocationMarker.current = new maplibregl.Marker({ element: bluePin, anchor: 'center' })
                             .setLngLat([longitude, latitude])
                             .addTo(map.current!);
                     },
@@ -365,9 +416,23 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             return;
         }
 
+        let coordsRafId: number | null = null;
+        let pendingCoords: { lat: number; lng: number; zoom: number } | null = null;
+
+        const scheduleCoordsUpdate = (coords: { lat: number; lng: number; zoom: number }) => {
+            pendingCoords = coords;
+            if (coordsRafId !== null) return;
+            coordsRafId = requestAnimationFrame(() => {
+                coordsRafId = null;
+                if (pendingCoords && onCoordinatesChangeRef.current) {
+                    onCoordinatesChangeRef.current(pendingCoords);
+                }
+            });
+        };
+
         try {
             // Initialize with style that includes glyphs for vector label fonts
-            const initialStyle = {
+            const initialStyle: maplibregl.StyleSpecification = {
                 version: 8,
                 sources: {},
                 layers: [],
@@ -376,7 +441,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
             map.current = new maplibregl.Map({
                 container: mapContainer.current,
-                style: initialStyle as any, // Cast to any to avoid type complaints with empty style
+                style: initialStyle,
                 center: [20, 50], // Europe centered
                 zoom: 3.5,
                 maxZoom: 18,
@@ -391,9 +456,8 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
                 if (!map.current) return;
 
-                // Initialize Slot Architecture
-                const slots = ['slot-base', 'slot-data', 'slot-roads', 'slot-ui'];
-                slots.forEach(slotId => {
+                // Initialize Slot Architecture (base -> data -> overlays -> labels -> ui)
+                MAP_SLOTS.forEach(slotId => {
                     if (!map.current?.getLayer(slotId)) {
                         map.current?.addLayer({
                             id: slotId,
@@ -403,7 +467,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     }
                 });
 
-                // Initialize Ruler Source/Layers
+                // Initialize Ruler Source/Layers on top of all slots
                 map.current.addSource('ruler-source', {
                     type: 'geojson',
                     data: { type: 'FeatureCollection', features: [] }
@@ -450,7 +514,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     if (rulerState.current.points.length > 1) {
                         const line = lineString(rulerState.current.points);
                         const distance = length(line, { units: 'kilometers' });
-                        onMeasure(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
+                        onMeasureRef.current(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
 
                         // Stop measuring after 2 points
                         rulerState.current.active = false;
@@ -458,13 +522,13 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                         if (mapContainer.current) {
                             mapContainer.current.classList.remove('tool-measure');
                         }
-                        activeToolRef.current = null;
-                        onToolChangeRef.current(null);
+                        activeToolPropRef.current.current = null;
+                        onToolChangePropRef.current.current(null);
                     }
                     return;
                 }
 
-                if (activeToolRef.current === 'marker') {
+                if (activeToolPropRef.current.current === 'marker') {
                     // Create minimalistic red pin (no transition to prevent wiggle during pan)
                     const redPin = document.createElement('div');
                     redPin.className = 'custom-map-pin';
@@ -482,7 +546,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     // Esri World Imagery Tile URL (Free)
                     const tileUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/15/${yTile}/${xTile}`;
 
-                    const t = translations[currentLang].marker;
+                    const t = translations[currentLangRef.current].marker;
 
                     const popupContent = document.createElement('div');
                     popupContent.className = 'glass-popup-content';
@@ -609,8 +673,8 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
                     // Reset tool
                     setActiveTool(null);
-                    activeToolRef.current = null;
-                    onToolChangeRef.current(null);
+                    activeToolPropRef.current.current = null;
+                    onToolChangePropRef.current.current(null);
                 }
             });
 
@@ -620,25 +684,22 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
                     checkAndLoadCountries(center.lat, center.lng, zoom);
-
-                    if (onCoordinatesChange) {
-                        onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
-                    }
+                    scheduleCoordsUpdate({ lat: center.lat, lng: center.lng, zoom });
                 }
             });
 
             map.current.on('move', () => {
-                if (map.current && onCoordinatesChange) {
+                if (map.current) {
                     const center = map.current.getCenter();
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: center.lat, lng: center.lng, zoom });
+                    scheduleCoordsUpdate({ lat: center.lat, lng: center.lng, zoom });
                 }
             });
 
             map.current.on('mousemove', (e) => {
-                if (onCoordinatesChange && map.current) {
+                if (map.current) {
                     const zoom = map.current.getZoom();
-                    onCoordinatesChange({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
+                    scheduleCoordsUpdate({ lat: e.lngLat.lat, lng: e.lngLat.lng, zoom });
                 }
 
                 // Ruler Logic
@@ -649,7 +710,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     // Live distance update
                     const line = lineString([rulerState.current.points[0], rulerState.current.tempPoint]);
                     const distance = length(line, { units: 'kilometers' });
-                    onMeasure(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
+                    onMeasureRef.current(`${distance.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`);
                 }
             });
 
@@ -661,6 +722,10 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
         }
 
         return () => {
+            if (coordsRafId !== null) {
+                cancelAnimationFrame(coordsRafId);
+            }
+
             // Clean up all marker event listeners
             markerCleanups.current.forEach(cleanup => cleanup());
             markerCleanups.current = [];
@@ -668,20 +733,23 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             // Remove all markers
             markers.current.forEach(marker => marker.remove());
             markers.current = [];
+            userLocationMarker.current?.remove();
+            userLocationMarker.current = null;
 
-            // Remove map
+            // Remove map and reset refs so remounts (e.g., StrictMode/HMR) re-initialize cleanly
             map.current?.remove();
+            map.current = null;
+            lastActiveLayer.current = null;
+            setIsMapLoaded(false);
         };
-    }, []);
+    }, [setActiveTool, updateRulerLayer]);
 
     // Helper: Update Language on Vector Labels
-    const updateLanguage = () => {
+    const updateLanguage = useCallback(() => {
         if (!map.current) return;
 
         // Map language codes to OSM name fields
-        const langField = currentLang === 'en' ? 'name:en' :
-            currentLang === 'bg' ? 'name:bg' :
-                currentLang === 'it' ? 'name:it' : 'name';
+        const langField = getLanguageField(currentLang);
 
         // Update all vector label layers
         VECTOR_LABEL_LAYER_IDS.forEach(layerId => {
@@ -711,11 +779,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                             ['get', 'name:en'],
                             ['get', 'name']
                         ]);
-                    } catch (e) { /* ignore */ }
+                    } catch { /* ignore */ }
                 }
             });
         }
-    };
+    }, [currentLang]);
 
     // Handle Style Changes & Toggles
     useEffect(() => {
@@ -723,9 +791,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
         const initSlots = () => {
             if (!map.current) return;
-            // Order matters: base -> data -> overlays -> labels (on top)
-            const slots = ['slot-base', 'slot-data', 'slot-overlays', 'slot-labels'];
-            slots.forEach(slotId => {
+            MAP_SLOTS.forEach(slotId => {
                 if (!map.current?.getLayer(slotId)) {
                     map.current?.addLayer({
                         id: slotId,
@@ -752,7 +818,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
             }
 
             if (showGraticules) {
-                const features: any[] = [];
+                const features: Feature[] = [];
                 for (let lng = -180; lng <= 180; lng += 10) {
                     features.push({
                         type: 'Feature',
@@ -778,7 +844,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     type: 'line',
                     source: graticulesSourceId,
                     paint: { 'line-color': '#000000', 'line-opacity': 0.3, 'line-width': 1 }
-                });
+                }, 'slot-overlays');
 
                 map.current.addLayer({
                     id: graticulesLabelLayerId,
@@ -792,7 +858,7 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                         'text-font': ['Noto Sans Regular']
                     },
                     paint: { 'text-color': '#000000', 'text-halo-color': '#ffffff', 'text-halo-width': 2 }
-                });
+                }, 'slot-overlays');
             }
 
 
@@ -870,10 +936,11 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                 map.current.removeSource(globalAdminSourceId);
             }
 
-            if (selectedAdminCountry) {
+            if (selectedAdminCountry && ISO_ALPHA3_REGEX.test(selectedAdminCountry)) {
                 // GeoBoundaries URL Structure (using media proxy for LFS support):
                 // https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/{ISO}/ADM1/geoBoundaries-{ISO}-ADM1.geojson
-                const url = `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${selectedAdminCountry}/ADM1/geoBoundaries-${selectedAdminCountry}-ADM1.geojson`;
+                const safeCode = encodeURIComponent(selectedAdminCountry);
+                const url = `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${safeCode}/ADM1/geoBoundaries-${safeCode}-ADM1.geojson`;
 
                 map.current.addSource(globalAdminSourceId, {
                     type: 'geojson',
@@ -945,11 +1012,12 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                     if (map.current.getSource(baseSourceId)) map.current.removeSource(baseSourceId);
                     if (map.current.getSource(labelsSourceId)) map.current.removeSource(labelsSourceId);
 
-                    // Add base raster tiles
+                    // Add base raster tiles (respect source maxzoom so MapLibre overzooms cleanly)
                     map.current.addSource(baseSourceId, {
                         type: 'raster',
                         tiles: [layerConfig.url],
                         tileSize: 256,
+                        maxzoom: layerConfig.maxzoom,
                         attribution: layerConfig.attribution
                     });
 
@@ -980,16 +1048,14 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                         }
 
                         // Get language field based on current language
-                        const langField = currentLang === 'en' ? 'name:en' :
-                            currentLang === 'bg' ? 'name:bg' :
-                                currentLang === 'it' ? 'name:it' : 'name';
+                        const langField = getLanguageField(currentLangRef.current);
 
                         const isDarkMap = layerConfig.isDark;
                         const textColor = isDarkMap ? '#ffffff' : '#1a1a2e';
                         const haloColor = isDarkMap ? '#000000' : '#ffffff';
 
-                        // Add all vector label layers using helper
-                        addVectorLabelLayers(map.current, vectorSourceId, langField, textColor, haloColor);
+                        // Add all vector label layers below slot-labels so ruler stays on top
+                        addVectorLabelLayers(map.current, vectorSourceId, langField, textColor, haloColor, 'slot-labels');
                     }
 
                     updateOverlays();
@@ -1010,17 +1076,15 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
                             });
                         }
 
-                        // Add layers if they don't exist - use helper for all 6 layers
+                        // Add layers if they don't exist
                         if (!map.current.getLayer('vector-labels-country')) {
-                            const langField = currentLang === 'en' ? 'name:en' :
-                                currentLang === 'bg' ? 'name:bg' :
-                                    currentLang === 'it' ? 'name:it' : 'name';
+                            const langField = getLanguageField(currentLangRef.current);
 
                             const isDarkMap = layerConfig.isDark;
                             const textColor = isDarkMap ? '#ffffff' : '#1a1a2e';
                             const haloColor = isDarkMap ? '#000000' : '#ffffff';
 
-                            addVectorLabelLayers(map.current, vectorSourceId, langField, textColor, haloColor);
+                            addVectorLabelLayers(map.current, vectorSourceId, langField, textColor, haloColor, 'slot-labels');
                         }
                     } else {
                         // Remove vector label layers
@@ -1034,14 +1098,14 @@ const MapContainer = forwardRef<MapRef, MapContainerProps>(({
 
         updateMapState();
 
-    }, [activeLayer, showLabels, showBorders, selectedAdminCountry, showGraticules, isMapLoaded, currentLang]);
+    }, [activeLayer, showLabels, showBorders, selectedAdminCountry, showGraticules, isMapLoaded, updateLanguage]);
 
     // Language Update Effect
     useEffect(() => {
         if (isMapLoaded) {
             updateLanguage();
         }
-    }, [currentLang, isMapLoaded, activeLayer]);
+    }, [isMapLoaded, activeLayer, updateLanguage]);
 
     return (
         <div className="map-wrapper">

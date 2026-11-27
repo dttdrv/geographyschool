@@ -30,15 +30,18 @@ const TypeIcon: React.FC<{ type: SearchResult['type']; size?: number }> = ({ typ
 
 // Highlight matching text in result name
 const HighlightedText: React.FC<{ text: string; highlight: string }> = ({ text, highlight }) => {
-    if (!highlight.trim()) return <>{text}</>;
+    const trimmed = highlight.trim();
+    if (!trimmed) return <>{text}</>;
 
-    const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    const parts = text.split(regex);
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const splitRegex = new RegExp(`(${escaped})`, 'gi');
+    const parts = text.split(splitRegex);
+    const lowerTarget = trimmed.toLowerCase();
 
     return (
         <>
             {parts.map((part, i) =>
-                regex.test(part) ? (
+                part.toLowerCase() === lowerTarget ? (
                     <span key={i} style={{ color: '#3B82F6', fontWeight: 600 }}>{part}</span>
                 ) : (
                     <span key={i}>{part}</span>

@@ -31,12 +31,6 @@ export const useWindowSize = (): WindowSize => {
 
         window.addEventListener('resize', handleResize);
 
-        // Initial call without debounce
-        setWindowSize({
-            width: window.innerWidth,
-            height: window.innerHeight,
-        });
-
         return () => {
             window.removeEventListener('resize', handleResize);
             if (timeoutId) {

@@ -14,6 +14,13 @@ import { initializeSearchEngine, fuzzySearch, type SearchResult } from '../../ut
 import type { Translation, SupportedLanguage } from '../../utils/translations';
 export type Language = SupportedLanguage;
 
+export interface SelectedLocation {
+    center: [number, number];
+    zoom: number;
+    bbox?: [number, number, number, number];
+    name?: string;
+}
+
 interface OverlayProps {
     onToolChange: (tool: string | null) => void;
     onLayerChange: (layer: MapStyleId) => void;
@@ -34,7 +41,7 @@ interface OverlayProps {
     onSelectAdminCountry?: (country: string | null) => void;
     activeTool: string | null;
     coordinates: { lat: number; lng: number; zoom: number } | null;
-    onLocationSelect: (location: any) => void;
+    onLocationSelect: (location: SelectedLocation) => void;
     onZoomIn: () => void;
     onZoomOut: () => void;
     onLocateMe: () => void;
@@ -95,11 +102,18 @@ const Overlay: React.FC<OverlayProps> = ({
             .catch(err => console.error('[Overlay] Search init failed:', err));
     }, []);
 
+    // Sync fullscreen state when user exits via Escape or browser UI
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(Boolean(document.fullscreenElement));
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
+
     // Debounced search effect
     useEffect(() => {
         if (!searchFocused || !searchQuery.trim()) {
-            setSearchResults([]);
-            setSelectedResultIndex(-1);
             return;
         }
 
@@ -111,6 +125,15 @@ const Overlay: React.FC<OverlayProps> = ({
 
         return () => clearTimeout(debounceTimer);
     }, [searchQuery, searchFocused]);
+
+    const visibleSearchResults = useMemo(
+        () => (searchFocused && searchQuery.trim() ? searchResults : []),
+        [searchFocused, searchQuery, searchResults]
+    );
+
+    const activeResultIndex = visibleSearchResults.length > 0
+        ? Math.min(selectedResultIndex, visibleSearchResults.length - 1)
+        : -1;
 
     // Handle search result selection
     const handleSelectResult = useCallback((result: SearchResult) => {
@@ -127,25 +150,25 @@ const Overlay: React.FC<OverlayProps> = ({
 
     // Keyboard navigation handler
     const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
-        if (!searchResults.length) return;
+        if (!visibleSearchResults.length) return;
 
         switch (e.key) {
             case 'ArrowDown':
                 e.preventDefault();
                 setSelectedResultIndex(prev =>
-                    prev < searchResults.length - 1 ? prev + 1 : 0
+                    prev < visibleSearchResults.length - 1 ? prev + 1 : 0
                 );
                 break;
             case 'ArrowUp':
                 e.preventDefault();
                 setSelectedResultIndex(prev =>
-                    prev > 0 ? prev - 1 : searchResults.length - 1
+                    prev > 0 ? prev - 1 : visibleSearchResults.length - 1
                 );
                 break;
             case 'Enter':
                 e.preventDefault();
-                if (selectedResultIndex >= 0 && searchResults[selectedResultIndex]) {
-                    handleSelectResult(searchResults[selectedResultIndex]);
+                if (activeResultIndex >= 0 && visibleSearchResults[activeResultIndex]) {
+                    handleSelectResult(visibleSearchResults[activeResultIndex]);
                 }
                 break;
             case 'Escape':
@@ -154,17 +177,13 @@ const Overlay: React.FC<OverlayProps> = ({
                 setSearchResults([]);
                 break;
         }
-    }, [searchResults, selectedResultIndex, handleSelectResult]);
+    }, [visibleSearchResults, activeResultIndex, handleSelectResult]);
 
     const toggleFullscreen = () => {
         if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
-            setIsFullscreen(true);
+            document.documentElement.requestFullscreen?.().catch(() => { });
         } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-                setIsFullscreen(false);
-            }
+            document.exitFullscreen?.().catch(() => { });
         }
     };
 
@@ -385,10 +404,10 @@ const Overlay: React.FC<OverlayProps> = ({
                             <div ref={searchDropdownRef}>
                                 <Suspense fallback={null}>
                                     <SearchDropdown
-                                        results={searchResults}
+                                        results={visibleSearchResults}
                                         isLoading={isSearchLoading && searchFocused}
-                                        isVisible={searchFocused && (searchResults.length > 0 || (searchQuery.length > 0 && !isSearchLoading))}
-                                        selectedIndex={selectedResultIndex}
+                                        isVisible={searchFocused && (visibleSearchResults.length > 0 || (searchQuery.trim().length > 0 && !isSearchLoading))}
+                                        selectedIndex={activeResultIndex}
                                         onSelect={handleSelectResult}
                                         onHover={setSelectedResultIndex}
                                         highlightText={searchQuery}

@@ -1,11 +1,16 @@
 import React, { useEffect } from 'react';
 import maplibregl from 'maplibre-gl';
 
+interface WeatherDebugInfo {
+    weatherTs?: string;
+    [key: string]: unknown;
+}
+
 interface UseWeatherLayerProps {
     map: React.MutableRefObject<maplibregl.Map | null>;
     isMapLoaded: boolean;
     showWeather: boolean;
-    setDebugInfo: React.Dispatch<React.SetStateAction<any>>;
+    setDebugInfo: React.Dispatch<React.SetStateAction<WeatherDebugInfo>>;
 }
 
 export const useWeatherLayer = ({
@@ -32,7 +37,7 @@ export const useWeatherLayer = ({
 
             if (!showWeather) {
                 cleanupLayers();
-                setDebugInfo((prev: any) => ({ ...prev, weatherTs: 'OFF' }));
+                setDebugInfo((prev) => ({ ...prev, weatherTs: 'OFF' }));
                 return;
             }
 
@@ -54,11 +59,11 @@ export const useWeatherLayer = ({
                             // Color 2 = Universal Blue
                             // Options 1_1 = Smooth + Snow
                             rainTileUrl = `${host}${path}/256/{z}/{x}/{y}/2/1_1.png`;
-                            setDebugInfo((prev: any) => ({ ...prev, weatherTs: `Rain: ${new Date(lastPastFrame.time * 1000).toLocaleTimeString()}` }));
+                            setDebugInfo((prev) => ({ ...prev, weatherTs: `Rain: ${new Date(lastPastFrame.time * 1000).toLocaleTimeString()}` }));
                         }
                     } catch (err) {
                         console.error('Failed to fetch RainViewer data', err);
-                        setDebugInfo((prev: any) => ({ ...prev, weatherTs: 'Rain Fetch Error' }));
+                        setDebugInfo((prev) => ({ ...prev, weatherTs: 'Rain Fetch Error' }));
                     }
                 }
 
@@ -94,7 +99,7 @@ export const useWeatherLayer = ({
 
             } catch (e) {
                 console.error("Critical Weather Error", e);
-                setDebugInfo((prev: any) => ({ ...prev, weatherTs: 'CRITICAL ERR' }));
+                setDebugInfo((prev) => ({ ...prev, weatherTs: 'CRITICAL ERR' }));
             }
         };
 

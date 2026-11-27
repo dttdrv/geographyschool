@@ -1,7 +1,7 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import MapContainer from './components/Map/MapContainer';
 import type { MapRef } from './components/Map/MapContainer';
-import Overlay from './components/UI/Overlay';
+import Overlay, { type SelectedLocation } from './components/UI/Overlay';
 import type { MapStyleId } from './components/Map/mapStyles';
 import { translations } from './utils/translations';
 import type { Language } from './components/UI/Overlay';
@@ -31,11 +31,13 @@ function App() {
   const activeToolRef = useRef<string | null>(null);
   const onToolChangeRef = useRef<(tool: string | null) => void>(() => { });
 
-  // Sync ref with handler
-  onToolChangeRef.current = (tool) => {
-    setActiveTool(tool);
-    activeToolRef.current = tool;
-  };
+  // Sync ref with handler inside an effect to satisfy React ref rules
+  useEffect(() => {
+    onToolChangeRef.current = (tool) => {
+      setActiveTool(tool);
+      activeToolRef.current = tool;
+    };
+  }, []);
 
   const handleToolChange = useCallback((tool: string | null) => {
     setActiveTool(tool);
@@ -98,7 +100,7 @@ function App() {
         activeTool={activeTool}
         isMapDark={isDark}
         coordinates={coordinates}
-        onLocationSelect={(location) => mapRef.current?.flyToLocation(location.center, location.zoom, location.bbox, location.name)}
+        onLocationSelect={(location: SelectedLocation) => mapRef.current?.flyToLocation(location.center, location.zoom, location.bbox, location.name)}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onLocateMe={() => mapRef.current?.locateMe()}

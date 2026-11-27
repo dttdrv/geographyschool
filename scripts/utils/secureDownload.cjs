@@ -1,5 +1,6 @@
 const https = require('https');
 const fs = require('fs');
+const path = require('path');
 const { URL } = require('url');
 
 const MAX_REDIRECTS = 3;
@@ -81,4 +82,31 @@ function downloadFile(url, destPath, redirects = 0) {
     });
 }
 
-module.exports = { downloadFile };
+/**
+ * Safely extracts a zip archive into destDir, rejecting Zip Slip traversal entries.
+ * @param {string} zipPath - Path to the .zip archive.
+ * @param {string} destDir - Destination directory.
+ */
+function extractZipSafe(zipPath, destDir) {
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip(zipPath);
+    const resolvedDest = path.resolve(destDir);
+
+    fs.mkdirSync(resolvedDest, { recursive: true });
+
+    for (const entry of zip.getEntries()) {
+        const entryTarget = path.resolve(resolvedDest, entry.entryName);
+        if (entryTarget !== resolvedDest && !entryTarget.startsWith(resolvedDest + path.sep)) {
+            throw new Error(`Unsafe zip entry path detected: ${entry.entryName}`);
+        }
+
+        if (entry.isDirectory) {
+            fs.mkdirSync(entryTarget, { recursive: true });
+        } else {
+            fs.mkdirSync(path.dirname(entryTarget), { recursive: true });
+            fs.writeFileSync(entryTarget, entry.getData());
+        }
+    }
+}
+
+module.exports = { downloadFile, extractZipSafe };

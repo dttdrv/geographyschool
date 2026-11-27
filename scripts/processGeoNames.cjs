@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { downloadFile } = require('./utils/secureDownload.cjs');
+const { downloadFile, extractZipSafe } = require('./utils/secureDownload.cjs');
 const { createUnzip } = require('zlib');
 const { pipeline } = require('stream/promises');
 const readline = require('readline');
@@ -38,9 +38,7 @@ const COLS = {
 
 async function extractZip(zipPath, destDir) {
     console.log(`Extracting ${zipPath}...`);
-    const AdmZip = require('adm-zip');
-    const zip = new AdmZip(zipPath);
-    zip.extractAllTo(destDir, true);
+    extractZipSafe(zipPath, destDir);
 }
 
 function parseGeoNamesLine(line) {
