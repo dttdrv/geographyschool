@@ -20,19 +20,17 @@ export const MAP_STYLES: Record<MapStyleId, MapStyle> = {
     political: {
         id: 'political',
         name: 'Political',
-        url: 'https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png',
-        labelsUrl: 'https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png',
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
         vectorLabelsStyle: VECTOR_LABELS_STYLE,
         type: 'raster',
-        attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxzoom: 19,
+        attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+        maxzoom: 16,
         isDark: false
     },
     satellite: {
         id: 'satellite',
         name: 'Satellite',
         url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        labelsUrl: 'https://basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}@2x.png',
         vectorLabelsStyle: VECTOR_LABELS_STYLE,
         type: 'raster',
         attribution: 'Tiles &copy; Esri',
