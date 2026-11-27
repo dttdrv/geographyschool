@@ -1,0 +1,4 @@
+## 2024-05-24 - [Missing Content Security Policy (CSP)]
+**Vulnerability:** The application lacks a Content Security Policy (CSP) in `index.html`. This means that if an attacker manages to inject a script via XSS, the browser will execute it without restriction.
+**Learning:** Adding a CSP provides defense-in-depth against XSS attacks by restricting the sources from which scripts, styles, and other resources can be loaded. Because this map application loads tiles and assets from various external sources (e.g., MapLibre, ArcGIS, OpenStreetMap, RainViewer), the CSP needs to be carefully configured to allow these legitimate sources while blocking unauthorized ones. A `meta` tag is a simple way to add it to a static site.
+**Prevention:** Include a strong CSP by default in new projects, ideally via HTTP headers or, for static sites, a `<meta>` tag in the `<head>` of the HTML entry point.
